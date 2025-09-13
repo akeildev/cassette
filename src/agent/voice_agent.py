@@ -21,8 +21,7 @@ from livekit.agents import (
 )
 from livekit.agents.voice import AgentSession
 from livekit.plugins import openai, elevenlabs, silero
-# from openai.types.beta.realtime.session import InputAudioTranscription
-# from openai.types.beta.realtime import Session
+from openai.types.beta.realtime.session import InputAudioTranscription
 from openai import AsyncOpenAI
 
 # Import MCP components
@@ -79,7 +78,7 @@ class VoiceOverlayAgent:
         # Combine existing tools with MCP tools
         tools = [
             self.take_screenshot,
-            self.execute_mcp_tool,  # MCP tool executor
+            # self.execute_mcp_tool,  # MCP tool executor - temporarily disabled
         ]
         
         agent = Agent(
@@ -87,27 +86,24 @@ class VoiceOverlayAgent:
             tools=tools
         )
         
-        # Create agent session with OpenAI LLM + STT + ElevenLabs TTS
+        # Create agent session with working OpenAI Realtime configuration
         self.session = AgentSession(
-            llm=openai.LLM(
-                model="gpt-4o",
-                temperature=0.7,
-            ),
-            stt=openai.STT(
-                model="whisper-1",
-                language="en",
+            llm=openai.realtime.RealtimeModel(
+                model="gpt-4o-realtime-preview",
+                modalities=["text"],  # Key: Text-only mode for use with separate TTS
+                input_audio_transcription=InputAudioTranscription(
+                    model="whisper-1",
+                    language="en",
+                ),
             ),
             tts=elevenlabs.TTS(
-                voice=elevenlabs.Voice(
-                    id=os.getenv("ELEVENLABS_VOICE_ID", "ThT5KcBeYPX3keUQqHPh"),
-                    name="Rachel",
-                    category="premade"
-                ),
-                model_id="eleven_turbo_v2",
+                voice_id=os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL"),
+                model="eleven_turbo_v2_5",
+                api_key=os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY"),
             ),
             vad=silero.VAD.load(
                 min_speech_duration=0.2,
-                min_silence_duration=0.5, 
+                min_silence_duration=0.5,
                 activation_threshold=0.6,
             ),
         )
@@ -117,7 +113,7 @@ class VoiceOverlayAgent:
         
         # Start the session with the agent
         await self.session.start(agent=agent, room=ctx.room)
-        
+
         # Send initial greeting if specified
         if self.metadata.get("send_greeting", True):
             await self._send_greeting()
@@ -159,24 +155,24 @@ class VoiceOverlayAgent:
         if self.session:
             try:
                 logger.info(f"Speaking through TTS: '{text}'")
-                
+
                 # Add a small pause before speaking for clarity
                 await asyncio.sleep(0.2)
-                
-                # Use the session's TTS with clear instructions
+
+                # Use the session's generate_reply for proper conversation flow
                 handle = await self.session.generate_reply(
                     instructions=f"Speak this message clearly to the user: '{text}'"
                 )
-                
+
                 # Wait for the speech to complete
                 if hasattr(handle, "wait_for_initialization"):
                     await handle.wait_for_initialization()
-                
+
                 # Add a small pause after speaking for clarity
                 await asyncio.sleep(0.3)
-                
+
                 logger.info(f"Successfully spoke: '{text}'")
-                
+
             except Exception as e:
                 logger.error(f"TTS error while speaking '{text}': {e}")
                 # Fallback: Try alternative TTS method
@@ -193,31 +189,40 @@ class VoiceOverlayAgent:
             "greeting",
             "Hello! I'm your voice assistant. I can see your screen, help with various tasks, and execute commands. Just let me know how I can help."
         )
-        
+
         # Add MCP tools info if available
         if self.mcp_router and self.mcp_router.tools:
             tool_count = len(self.mcp_router.tools)
             greeting += f" I have {tool_count} tools available to help with various tasks."
-        
-        await self._say_wrapper(greeting)
+
+        # Send greeting using generate_reply - this triggers the conversation properly
+        handle = await self.session.generate_reply(
+            instructions=f"Say EXACTLY this and nothing else: '{greeting}'"
+        )
+
+        # Wait for greeting to complete
+        if hasattr(handle, "wait_for_initialization"):
+            await handle.wait_for_initialization()
             
     def _get_system_instructions(self):
         """Get system instructions for the agent"""
         base_instructions = """You are Voice Overlay, a helpful AI assistant integrated into the user's desktop.
         Be concise, friendly, and helpful. Focus on understanding the user's needs and providing
         clear, actionable responses.
-        
+
         You can see the user's screen when they ask about it. Use the take_screenshot tool when:
         - They ask "what's on my screen" or "can you see this"
         - They need help with something visible on their screen
         - They want you to read or analyze visual content
         - They ask about errors, UI elements, or applications they're using
-        
+
         For system operations, use the execute_mcp_tool function with appropriate tool names.
-        
+
         Always describe actions in natural language without mentioning tool names.
-        
-        After completing tasks, summarize the results conversationally."""
+
+        After completing tasks, summarize the results conversationally.
+
+        You can be interrupted at any time - this is natural conversation."""
         
         # Add available MCP tools to instructions
         if self.mcp_router and self.mcp_router.tools:
@@ -235,7 +240,7 @@ class VoiceOverlayAgent:
         self,
         context: RunContext,
         tool_name: str,
-        arguments: Optional[Dict[str, Any]] = None,
+        arguments: dict = None,
         request_screenshot_first: bool = False
     ) -> str:
         """
