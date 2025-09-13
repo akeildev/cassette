@@ -41,30 +41,35 @@ export function formatStepContent(step, platform = 'cassette', sessionData = {})
 
   // Add action as structured data that the agent can parse
   if (step.action) {
-    contentParts.push('\n\n[STEP_ACTION]');
-    contentParts.push(JSON.stringify(step.action));
-    contentParts.push('[/STEP_ACTION]');
+    // Only include the essential fields for the action
+    const actionData = {
+      tool: step.action.tool,
+      parameters: step.action.parameters
+    };
+    if (step.action.description) {
+      actionData.description = step.action.description;
+    }
+    contentParts.push('\n\n[STEP_ACTION]' + JSON.stringify(actionData) + '[/STEP_ACTION]');
   }
 
   // Add fallback action if exists
   if (step.fallback_action) {
-    contentParts.push('\n\n[FALLBACK_ACTION]');
-    contentParts.push(JSON.stringify(step.fallback_action));
-    contentParts.push('[/FALLBACK_ACTION]');
+    contentParts.push('\n\n[FALLBACK_ACTION]' + JSON.stringify(step.fallback_action) + '[/FALLBACK_ACTION]');
   }
 
   // Add cursor action for cursor platform
   if (platform === 'cursor' && step.cursor_action) {
-    contentParts.push('\n\n[CURSOR_ACTION]');
-    contentParts.push(JSON.stringify(step.cursor_action));
-    contentParts.push('[/CURSOR_ACTION]');
+    contentParts.push('\n\n[CURSOR_ACTION]' + JSON.stringify(step.cursor_action) + '[/CURSOR_ACTION]');
   }
 
   // Add database save instruction
   if (step.action?.parameters?.save_to_database) {
-    contentParts.push('\n\n[SAVE_TO_DATABASE]');
-    contentParts.push(JSON.stringify(step.action.parameters.save_to_database));
-    contentParts.push('[/SAVE_TO_DATABASE]');
+    contentParts.push('\n\n[SAVE_TO_DATABASE]' + JSON.stringify(step.action.parameters.save_to_database) + '[/SAVE_TO_DATABASE]');
+  }
+
+  // Add stop marker if this step should stop the flow
+  if (step.stop_here) {
+    contentParts.push('\n\n[STOP_HERE]');
   }
 
   return contentParts.join('\n');

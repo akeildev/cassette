@@ -204,10 +204,10 @@ class VoiceOverlayAgent:
         STARTING THE COURSE - SIMPLIFIED FLOW:
         =======================================
         When a user says any of these: "start course", "start onboarding", "begin training", "let's start":
-        1. Say: "Welcome to Cassette! I'll be guiding you through the MoneyFi AI onboarding. Are you ready to start?"
+        1. Say: "I'll guide you through the MoneyFi AI onboarding. Ready?"
         2. Wait for user confirmation (yes/okay/sure/let's go/ready)
         3. Call: execute_mcp_tool with tool_name="startCourse" and arguments: {"courseTitle": "MoneyFi AI Onboarding"}
-        4. Begin the course flow
+        4. Begin the course flow - the first step will provide any needed context
 
         NO EMAIL NEEDED - This is a demo system, no email parameter required!
 
@@ -237,13 +237,18 @@ class VoiceOverlayAgent:
         4. [SAVE_TO_DATABASE] - Data to save:
            - Call saveSessionData with the provided data
 
+        5. [STOP_HERE] - Stop the course flow:
+           - Do NOT automatically proceed to next step
+           - This marks the end of the Cassette portion
+
         STEP-BY-STEP FLOW:
         ==================
         1. Read the lesson content naturally (stop at any markers)
         2. If [WAIT_FOR_RESPONSE], wait for user answer
         3. If [STEP_ACTION], execute the action
-        4. Automatically call nextStep to continue
-        5. Repeat until course complete
+        4. If [STOP_HERE], DO NOT call nextStep - course portion complete
+        5. Otherwise, automatically call nextStep to continue
+        6. Repeat until course complete or [STOP_HERE] encountered
 
         PLATFORM-SPECIFIC BEHAVIOR:
         ===========================
@@ -283,6 +288,8 @@ class VoiceOverlayAgent:
         - NEVER read [STEP_ACTION] blocks aloud - they're instructions for you
         - ALWAYS execute the action if present - it's part of the lesson
         - A step is NOT complete until BOTH content AND action are done
+        - If you see [STOP_HERE], DO NOT call nextStep - the Cassette portion is complete
+        - Otherwise, ALWAYS call nextStep after completing a step (unless [STOP_HERE])
         - Make everything sound natural and conversational
 
         You can see the user's screen when they ask about it. Use the take_screenshot tool when:
@@ -445,16 +452,27 @@ class VoiceOverlayAgent:
                         action_match = re.search(r'\[STEP_ACTION\](.*?)\[/STEP_ACTION\]', result_str, re.DOTALL)
                         if action_match:
                             action_json = action_match.group(1).strip()
-                            action_data = json.loads(action_json)
+                            if action_json:  # Only parse if not empty
+                                # Remove any leading/trailing whitespace and newlines more aggressively
+                                action_json = action_json.strip('\n\r\t ')
+                                logger.info(f"[Course Tool] Extracted action JSON: {action_json[:100]}...")
+                                # Parse the JSON
+                                action_data = json.loads(action_json)
 
-                            logger.info(f"[Course Tool] Found embedded action:")
-                            logger.info(f"  - Tool: {action_data.get('tool', 'N/A')}")
-                            logger.info(f"  - Description: {action_data.get('description', 'N/A')}")
-                            logger.info(f"  - Has parameters: {bool(action_data.get('parameters'))}")
+                                logger.info(f"[Course Tool] Found embedded action:")
+                                logger.info(f"  - Tool: {action_data.get('tool', 'N/A')}")
+                                logger.info(f"  - Description: {action_data.get('description', 'N/A')}")
+                                logger.info(f"  - Has parameters: {bool(action_data.get('parameters'))}")
+                            else:
+                                logger.warning("[Course Tool] Action block was empty")
+                        else:
+                            logger.info("[Course Tool] No action match found in step content")
 
-                            # The agent will process this embedded structure
-                    except (json.JSONDecodeError, AttributeError) as e:
-                        logger.info(f"[Course Tool] Could not parse embedded action: {e}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"[Course Tool] JSON parse error: {e}")
+                        logger.error(f"[Course Tool] Failed to parse: {action_json[:200] if 'action_json' in locals() else 'N/A'}")
+                    except Exception as e:
+                        logger.error(f"[Course Tool] Unexpected error parsing action: {e}")
 
                 # Return the raw content for the agent to process
                 return result

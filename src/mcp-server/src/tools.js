@@ -209,13 +209,19 @@ export const courseTools = [
     handler: async () => {
       try {
         // Clear all session data for the demo user
-        const { error } = await db.supabase
+        const { error: sessionError } = await db.supabase
           .from('user_session_data')
           .delete()
           .eq('user_email', 'demo@cassette.ai');
 
-        if (error) {
-          return { error: `Failed to reset demo: ${error.message}` };
+        // Also clear progress to start fresh
+        const { error: progressError } = await db.supabase
+          .from('user_progress')
+          .delete()
+          .eq('user_email', 'demo@cassette.ai');
+
+        if (sessionError || progressError) {
+          return { error: `Failed to reset demo: ${(sessionError || progressError).message}` };
         }
 
         // Reset the session ID in the database helper
