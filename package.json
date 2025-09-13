@@ -1,0 +1,30 @@
+{
+  "name": "cassette",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akeildev/cassette.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/akeildev/cassette/issues"
+  },
+  "homepage": "https://github.com/akeildev/cassette#readme",
+  "dependencies": {
+    "dotenv": "^17.2.2",
+    "electron": "^38.1.0",
+    "electron-store": "^10.1.0",
+    "express": "^5.1.0",
+    "livekit-server-sdk": "^2.13.3",
+    "uuid": "^13.0.0",
+    "ws": "^8.18.3"
+  }
+}
