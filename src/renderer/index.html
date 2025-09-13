@@ -24,7 +24,10 @@
         <div class="container">
             <!-- Cassette Tape with integrated controls -->
             <div class="tape-section">
-                <div class="tape-reel left" id="leftReel"></div>
+                <!-- Left reel becomes REC button -->
+                <button class="tape-reel-button rec-button" id="voiceButton">
+                    <span class="reel-text">REC</span>
+                </button>
                 
                 <div class="tape-center">
                     <div class="cassette-label">
@@ -35,19 +38,14 @@
                             <span class="status-dot"></span>
                             <span class="status-text">Ready</span>
                         </div>
-                        <button class="icon-button" id="muteButton" title="Mute">
-                            <span id="muteText">MUTE</span>
-                        </button>
                     </div>
                 </div>
                 
-                <div class="tape-reel right" id="rightReel"></div>
+                <!-- Right reel becomes MUTE button -->
+                <button class="tape-reel-button mute-button" id="muteButton">
+                    <span class="reel-text" id="muteText">MUTE</span>
+                </button>
             </div>
-            
-            <!-- Voice Button -->
-            <button class="voice-button" id="voiceButton">
-                <span class="voice-button-text">REC</span>
-            </button>
         </div>
     </div>
     
