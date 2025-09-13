@@ -42,7 +42,8 @@ class LiveKitClient {
         await this.initPromise;
         
         try {
-            console.log(`Connecting to LiveKit room: ${roomName}`);
+            console.log(`[LiveKit] Connecting to room: ${roomName}`);
+            console.log(`[LiveKit] URL: ${url}`);
             
             // Create room instance
             this.room = new window.LivekitClient.Room({
@@ -62,12 +63,14 @@ class LiveKitClient {
             this.setupRoomEventListeners();
             
             // Connect to room
+            console.log('[LiveKit] Attempting to connect with autoSubscribe: true');
             await this.room.connect(url, token, {
                 autoSubscribe: true,
             });
             
             this.isConnected = true;
-            console.log('Successfully connected to LiveKit room');
+            console.log('[LiveKit] Successfully connected to room');
+            console.log('[LiveKit] Room participants:', this.room.remoteParticipants.size);
             
             // Enable microphone
             await this.enableMicrophone();
@@ -80,7 +83,7 @@ class LiveKitClient {
             
             return true;
         } catch (error) {
-            console.error('Failed to connect to LiveKit:', error);
+            console.error('[LiveKit] Failed to connect:', error);
             this.emit('error', { message: error.message });
             throw error;
         }
@@ -123,11 +126,13 @@ class LiveKitClient {
         try {
             console.log('Enabling microphone...');
             
-            // Create and publish audio track
+            // Create and publish audio track with optimized settings for voice
             this.audioTrack = await window.LivekitClient.createLocalAudioTrack({
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true,
+                sampleRate: 16000,  // Standard for voice
+                channelCount: 1,    // Mono for voice
             });
             
             await this.room.localParticipant.publishTrack(this.audioTrack);
@@ -207,13 +212,28 @@ class LiveKitClient {
         
         // Track events
         this.room.on('trackSubscribed', (track, publication, participant) => {
-            console.log('Track subscribed:', track.kind, 'from', participant.identity);
+            console.log('[LiveKit] ✓ Track subscribed:', track.kind, 'from', participant.identity);
+            console.log('[LiveKit] Track details:', track.sid, 'published:', track.isPublished);
             
             if (track.kind === 'audio') {
+                console.log('[LiveKit] Setting up audio playback for', participant.identity);
+                
                 // Attach audio track to audio element for playback
                 const audioElement = track.attach();
                 audioElement.style.display = 'none';
+                audioElement.autoplay = true;
+                audioElement.volume = 1.0;
+                audioElement.muted = false;
                 document.body.appendChild(audioElement);
+                
+                console.log('[LiveKit] Audio element created with volume:', audioElement.volume, 'muted:', audioElement.muted);
+                
+                // Ensure playback starts
+                audioElement.play().then(() => {
+                    console.log('[LiveKit] ✓ Audio playback started successfully');
+                }).catch(e => {
+                    console.error('[LiveKit] ✗ Error starting audio playback:', e);
+                });
                 
                 this.emit('audioTrackSubscribed', { 
                     participant: participant.identity,
