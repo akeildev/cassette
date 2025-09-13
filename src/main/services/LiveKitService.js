@@ -168,7 +168,7 @@ class LiveKitService extends EventEmitter {
         console.log("[LiveKitService] Starting Python agent...");
 
         // Agent path - adjust based on your structure
-        const agentPath = path.join(__dirname, "../../../agent/voice_agent.py");
+        const agentPath = path.join(__dirname, "../../agent/voice_agent.py");
         console.log("[LiveKitService] Agent path:", agentPath);
 
         // Check if agent file exists
@@ -183,27 +183,44 @@ class LiveKitService extends EventEmitter {
         const config = this.settings.getLiveKitConfig();
         const voiceConfig = this.settings.getVoiceConfig();
 
-        // Prepare environment
+        // Prepare environment - include process.env to get OPENAI_API_KEY from .env
         const env = {
           ...process.env,
-          LIVEKIT_URL: config.url,
-          LIVEKIT_API_KEY: config.apiKey,
-          LIVEKIT_API_SECRET: config.apiSecret,
-          OPENAI_API_KEY: this.settings.getApiKey("openai"),
-          ELEVEN_API_KEY: voiceConfig.apiKey,
-          ELEVEN_VOICE_ID: voiceConfig.voiceId,
+          LIVEKIT_URL: config.url || process.env.LIVEKIT_URL,
+          LIVEKIT_API_KEY: config.apiKey || process.env.LIVEKIT_API_KEY,
+          LIVEKIT_API_SECRET: config.apiSecret || process.env.LIVEKIT_API_SECRET,
+          OPENAI_API_KEY: process.env.OPENAI_API_KEY || this.settings.getApiKey("openai"),
+          ELEVEN_API_KEY: process.env.ELEVENLABS_API_KEY || voiceConfig.apiKey,
+          ELEVEN_VOICE_ID: process.env.ELEVENLABS_VOICE_ID || voiceConfig.voiceId,
           ELEVEN_MODEL_ID: voiceConfig.modelId,
           ROOM_NAME: this.currentRoom,
           PYTHONUNBUFFERED: "1",
-          PYTHONPATH: path.join(__dirname, "../../../agent"),
+          PYTHONPATH: path.join(__dirname, "../../agent"),
         };
+        
+        // Log environment variables for debugging
+        console.log("[LiveKitService] Environment variables:");
+        console.log("  LIVEKIT_URL:", env.LIVEKIT_URL ? "Set" : "Missing");
+        console.log("  LIVEKIT_API_KEY:", env.LIVEKIT_API_KEY ? "Set" : "Missing");
+        console.log("  LIVEKIT_API_SECRET:", env.LIVEKIT_API_SECRET ? "Set" : "Missing");
+        console.log("  OPENAI_API_KEY:", env.OPENAI_API_KEY ? "Set" : "Missing");
+        console.log("  ROOM_NAME:", env.ROOM_NAME);
 
-        // Determine Python command
-        const pythonCommand =
-          process.platform === "win32" ? "python" : "python3";
+        // Determine Python command with full path
+        let pythonCommand = "python3";
+        if (process.platform === "darwin") {
+          // macOS - try homebrew python first, then system python
+          if (fs.existsSync("/opt/homebrew/bin/python3")) {
+            pythonCommand = "/opt/homebrew/bin/python3";
+          } else if (fs.existsSync("/usr/bin/python3")) {
+            pythonCommand = "/usr/bin/python3";
+          }
+        } else if (process.platform === "win32") {
+          pythonCommand = "python";
+        }
 
         // Check for venv
-        const venvPath = path.join(__dirname, "../../../agent/venv");
+        const venvPath = path.join(__dirname, "../../agent/venv");
         const venvPython = path.join(
           venvPath,
           process.platform === "win32" ? "Scripts/python.exe" : "bin/python3"
@@ -216,10 +233,20 @@ class LiveKitService extends EventEmitter {
         console.log("[LiveKitService] Using Python:", usePython);
         console.log("[LiveKitService] Room name in env:", env.ROOM_NAME);
 
-        // Spawn Python process
-        this.agentProcess = spawn(usePython, [agentPath], {
+        // Spawn Python process with 'connect' command to connect to the room
+        const args = [
+          agentPath, 
+          "connect", 
+          "--room", this.currentRoom,
+          "--url", env.LIVEKIT_URL,
+          "--api-key", env.LIVEKIT_API_KEY,
+          "--api-secret", env.LIVEKIT_API_SECRET
+        ];
+        console.log("[LiveKitService] Starting agent with command:", usePython, "voice_agent.py connect --room", this.currentRoom);
+        
+        this.agentProcess = spawn(usePython, args, {
           env,
-          cwd: path.join(__dirname, "../../../agent"),
+          cwd: path.join(__dirname, "../../agent"),
         });
 
         // Handle stdout
@@ -328,6 +355,24 @@ class LiveKitService extends EventEmitter {
   /**
    * Stop the current session
    */
+  /**
+   * Start agent for a specific room (wrapper for main.js compatibility)
+   */
+  async startAgent(roomName) {
+    // Set the current room
+    this.currentRoom = roomName;
+    
+    // Start the Python agent
+    return await this.startPythonAgent();
+  }
+  
+  /**
+   * Stop agent (wrapper for main.js compatibility)
+   */
+  async stopAgent() {
+    return await this.stopSession();
+  }
+
   async stopSession() {
     try {
       console.log("[LiveKitService] Stopping session...");
