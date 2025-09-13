@@ -5,7 +5,8 @@ import { courseTools } from './tools.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Load environment variables with quiet mode to avoid polluting stdout
+dotenv.config({ quiet: true });
 
 const server = new Server(
   {
@@ -49,4 +50,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 export async function runServer() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Keep the process alive
+  process.stdin.resume();
 }
