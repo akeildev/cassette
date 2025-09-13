@@ -6,6 +6,16 @@
         "command": "npx",
         "args": ["-y", "@peakmojo/applescript-mcp"],
         "env": {}
+      },
+      {
+        "id": "cassette-courses",
+        "transport": "stdio",
+        "command": "node",
+        "args": ["/Users/akeilsmith/cassette/src/mcp-server/src/stdio.js"],
+        "env": {
+          "SUPABASE_URL": "https://cearzjxohattpbiwmbij.supabase.co",
+          "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlYXJ6anhvaGF0dHBiaXdtYmlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NTAzODYsImV4cCI6MjA3MzMyNjM4Nn0.GX2Ka2uVULBtUPYMRw1oqs9GV2phymrFhApoks2Pra8"
+        }
       }
     ],
     "policy": {

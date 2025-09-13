@@ -1,9 +1,6 @@
 import { z } from 'zod';
 import { DatabaseHelper } from './database.js';
 import { formatCourseList, formatStepContent, formatProgress } from './formatters.js';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const db = new DatabaseHelper();
 
