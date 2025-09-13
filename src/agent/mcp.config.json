@@ -1,0 +1,63 @@
+{
+    "servers": [
+      {
+        "id": "applescript",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@peakmojo/applescript-mcp"],
+        "env": {}
+      }
+    ],
+    "policy": {
+      "sensitive_keywords": [
+        "delete",
+        "remove",
+        "write",
+        "exec",
+        "shell",
+        "filesystem",
+        "network",
+        "email",
+        "payment",
+        "open_url",
+        "http",
+        "post",
+        "put",
+        "patch",
+        "messages",
+        "contacts",
+        "calendar",
+        "reminders",
+        "applescript",
+        "system_events"
+      ],
+      "allowed_roots": [
+        "/Users/akeilsmith/clueless",
+        "/tmp",
+        "~/Desktop",
+        "~/Documents",
+        "~/Downloads"
+      ],
+      "confirm_timeout_sec": 6,
+      "tool_timeout_sec": 25,
+      "filler": {
+        "enabled": true,
+        "first_after_ms": 600,
+        "interval_ms": 3000,
+        "phrases": [
+          "Let me work on that.",
+          "Still processing...",
+          "One moment...",
+          "Almost there...",
+          "Working on it..."
+        ]
+      }
+    },
+    "runtime": {
+      "hot_reload": true,
+      "reload_every_sec": 5,
+      "max_retries": 3,
+      "retry_delay_ms": 1000
+    }
+  }
+  
