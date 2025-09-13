@@ -2,6 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import './env-loader.js';
 import { logger } from './logger.js';
 
+// Default demo user for single-user demo
+const DEMO_USER = 'demo@cassette.ai';
+
 export class DatabaseHelper {
   constructor() {
     const url = process.env.SUPABASE_URL;
@@ -12,17 +15,107 @@ export class DatabaseHelper {
     }
 
     this.supabase = createClient(url, key);
+    this.sessionId = null;
   }
 
-  // Course methods
-  async getCourse(slug) {
+  // Session data methods
+  async saveSessionData(key, value) {
+    const sessionId = this.sessionId || `session_${Date.now()}`;
+    this.sessionId = sessionId;
+
     const { data, error } = await this.supabase
-      .from('courses')
-      .select('*')
-      .eq('slug', slug)
+      .from('user_session_data')
+      .upsert({
+        user_email: DEMO_USER,
+        session_id: sessionId,
+        data_key: key,
+        data_value: value,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_email,session_id,data_key'
+      })
+      .select()
       .single();
 
     if (error) {
+      logger.error('Error saving session data:', error);
+      return null;
+    }
+
+    return data;
+  }
+
+  async getSessionData(key) {
+    const sessionId = this.sessionId || `session_${Date.now()}`;
+
+    const { data, error } = await this.supabase
+      .from('user_session_data')
+      .select('data_value')
+      .eq('user_email', DEMO_USER)
+      .eq('session_id', sessionId)
+      .eq('data_key', key)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      logger.error('Error fetching session data:', error);
+      return null;
+    }
+
+    return data?.data_value;
+  }
+
+  async getLatestSessionData(keys) {
+    const { data, error } = await this.supabase
+      .from('user_session_data')
+      .select('data_key, data_value')
+      .eq('user_email', DEMO_USER)
+      .in('data_key', keys)
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      logger.error('Error fetching session data:', error);
+      return {};
+    }
+
+    // Convert to key-value object
+    const result = {};
+    const foundKeys = new Set();
+
+    for (const item of data || []) {
+      if (!foundKeys.has(item.data_key)) {
+        result[item.data_key] = item.data_value;
+        foundKeys.add(item.data_key);
+      }
+    }
+
+    return result;
+  }
+
+  // Course methods
+  async getCourse(titleOrId) {
+    if (!titleOrId) {
+      return null;
+    }
+
+    // Try to find by title first
+    let { data, error } = await this.supabase
+      .from('courses')
+      .select('*')
+      .eq('title', titleOrId)
+      .single();
+
+    // If not found by title, try by ID
+    if (!data && titleOrId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      ({ data, error } = await this.supabase
+        .from('courses')
+        .select('*')
+        .eq('id', titleOrId)
+        .single());
+    }
+
+    if (error && error.code !== 'PGRST116') {
       logger.error('Error fetching course:', error);
       return null;
     }
@@ -45,15 +138,15 @@ export class DatabaseHelper {
   }
 
   // Progress methods
-  async getUserProgress(email, courseSlug) {
+  async getUserProgress(courseTitleOrId) {
     // First get the course
-    const course = await this.getCourse(courseSlug);
+    const course = await this.getCourse(courseTitleOrId);
     if (!course) return null;
 
     const { data, error } = await this.supabase
       .from('user_progress')
       .select('*')
-      .eq('user_email', email)
+      .eq('user_email', DEMO_USER)
       .eq('course_id', course.id)
       .single();
 
@@ -65,8 +158,8 @@ export class DatabaseHelper {
     return data;
   }
 
-  async createProgress(email, courseSlug) {
-    const course = await this.getCourse(courseSlug);
+  async createProgress(courseTitleOrId) {
+    const course = await this.getCourse(courseTitleOrId);
     if (!course) return null;
 
     // Get the first step of the course
@@ -76,12 +169,10 @@ export class DatabaseHelper {
     const { data, error } = await this.supabase
       .from('user_progress')
       .insert({
-        user_email: email,
+        user_email: DEMO_USER,
         course_id: course.id,
         current_step_id: firstStep.id,
-        completed_step_ids: [],
-        started_at: new Date().toISOString(),
-        last_accessed_at: new Date().toISOString()
+        completed_step_ids: []
       })
       .select()
       .single();
@@ -97,10 +188,7 @@ export class DatabaseHelper {
   async updateProgress(progressId, updates) {
     const { data, error } = await this.supabase
       .from('user_progress')
-      .update({
-        ...updates,
-        last_accessed_at: new Date().toISOString()
-      })
+      .update(updates)
       .eq('id', progressId)
       .select()
       .single();
@@ -148,7 +236,7 @@ export class DatabaseHelper {
     if (!currentStep) return null;
 
     // Try to get next step in the same lesson
-    let { data: nextStep } = await this.supabase
+    const { data: nextStep } = await this.supabase
       .from('steps')
       .select('*')
       .eq('lesson_id', currentStep.lesson_id)
@@ -159,7 +247,7 @@ export class DatabaseHelper {
 
     if (nextStep) return nextStep;
 
-    // If no next step in lesson, get first step of next lesson
+    // If no more steps in lesson, try next lesson
     const { data: currentLesson } = await this.supabase
       .from('lessons')
       .select('module_id, order_index')
@@ -179,6 +267,7 @@ export class DatabaseHelper {
       .single();
 
     if (nextLesson) {
+      // Get first step of next lesson
       const { data } = await this.supabase
         .from('steps')
         .select('*')
@@ -187,10 +276,10 @@ export class DatabaseHelper {
         .limit(1)
         .single();
 
-      if (data) return data;
+      return data;
     }
 
-    // If no next lesson, try next module
+    // If no more lessons in module, try next module
     const { data: currentModule } = await this.supabase
       .from('modules')
       .select('course_id, order_index')
@@ -293,11 +382,11 @@ export class DatabaseHelper {
   }
 
 
-  async getCourseStats(email, courseSlug) {
-    const progress = await this.getUserProgress(email, courseSlug);
+  async getCourseStats(courseTitleOrId) {
+    const progress = await this.getUserProgress(courseTitleOrId);
     if (!progress) return null;
 
-    const course = await this.getCourse(courseSlug);
+    const course = await this.getCourse(courseTitleOrId);
     if (!course) return null;
 
     // Get all modules for this course
@@ -306,15 +395,7 @@ export class DatabaseHelper {
       .select('id')
       .eq('course_id', course.id);
 
-    if (!modules || modules.length === 0) {
-      return {
-        totalSteps: 0,
-        completedSteps: 0,
-        percentComplete: 0,
-        timeSpent: '0m',
-        completedLessons: []
-      };
-    }
+    if (!modules) return null;
 
     // Get all lessons for these modules
     const moduleIds = modules.map(m => m.id);
@@ -323,48 +404,25 @@ export class DatabaseHelper {
       .select('id')
       .in('module_id', moduleIds);
 
-    if (!lessons || lessons.length === 0) {
-      return {
-        totalSteps: 0,
-        completedSteps: 0,
-        percentComplete: 0,
-        timeSpent: '0m',
-        completedLessons: []
-      };
-    }
+    if (!lessons) return null;
 
-    // Get total steps count for all lessons
+    // Get all steps for these lessons
     const lessonIds = lessons.map(l => l.id);
-    const { count: totalSteps } = await this.supabase
+    const { data: steps } = await this.supabase
       .from('steps')
-      .select('id', { count: 'exact', head: true })
+      .select('id')
       .in('lesson_id', lessonIds);
 
-    const completedSteps = progress.completed_step_ids.length;
-    const percentComplete = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
-
-    // Calculate time spent
-    const timeSpent = this.calculateTimeSpent(progress.started_at, progress.last_accessed_at);
+    const totalSteps = steps?.length || 0;
+    const completedSteps = progress.completed_step_ids?.length || 0;
+    const percentComplete = totalSteps > 0
+      ? Math.round((completedSteps / totalSteps) * 100)
+      : 0;
 
     return {
-      totalSteps: totalSteps || 0,
+      totalSteps,
       completedSteps,
-      percentComplete,
-      currentModule: undefined,
-      currentLesson: undefined,
-      timeSpent,
-      completedLessons: []
+      percentComplete
     };
-  }
-
-  calculateTimeSpent(startDate, lastDate) {
-    const diff = new Date(lastDate).getTime() - new Date(startDate).getTime();
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
   }
 }

@@ -1,18 +1,18 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import './env-loader.js';  // Silent env loading
 import { courseTools } from './tools.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import dotenv from 'dotenv';
 
-// Load environment variables with quiet mode to avoid polluting stdout
-dotenv.config({ quiet: true });
+// Detect platform from environment or arguments
+const platform = process.env.MCP_PLATFORM || process.argv[2] || 'cassette';
 
 const server = new Server(
   {
     name: 'course-navigator',
     version: '1.0.0',
-    description: 'Navigate through courses'
+    description: `Navigate through courses (Platform: ${platform})`
   },
   {
     capabilities: {
@@ -40,7 +40,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     throw new Error(`Tool ${request.params.name} not found`);
   }
 
-  const result = await tool.handler(request.params.arguments || {});
+  // Pass platform context to tool handler
+  const args = { ...(request.params.arguments || {}), platform };
+  const result = await tool.handler(args);
 
   return {
     content: [{ type: 'text', text: result.content || result.error || 'No output' }]
