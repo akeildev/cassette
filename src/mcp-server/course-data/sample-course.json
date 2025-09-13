@@ -1,0 +1,89 @@
+{
+  "course": {
+    "slug": "intro-to-ai",
+    "title": "Introduction to AI",
+    "description": "Learn the fundamentals of artificial intelligence",
+    "icon": "🤖",
+    "color": "#4F46E5"
+  },
+  "modules": [
+    {
+      "order_index": 1,
+      "title": "Getting Started",
+      "slug": "getting-started",
+      "description": "Introduction to AI concepts",
+      "lessons": [
+        {
+          "order_index": 1,
+          "title": "What is AI?",
+          "slug": "what-is-ai",
+          "description": "Understanding artificial intelligence",
+          "estimated_minutes": 10,
+          "steps": [
+            {
+              "order_index": 1,
+              "title": "Welcome to AI",
+              "content": "Artificial Intelligence (AI) is the simulation of human intelligence in machines that are programmed to think and learn. AI systems can perform tasks that typically require human intelligence, such as:\n\n• Visual perception\n• Speech recognition\n• Decision-making\n• Language translation\n\nIn this course, we'll explore the fundamental concepts of AI and how it's transforming our world."
+            },
+            {
+              "order_index": 2,
+              "title": "History of AI",
+              "content": "The concept of artificial intelligence dates back to ancient history, but the field as we know it began in 1956 at the Dartmouth Conference.\n\nKey milestones:\n• 1950: Alan Turing proposes the Turing Test\n• 1956: Term 'Artificial Intelligence' coined\n• 1997: Deep Blue defeats world chess champion\n• 2011: IBM Watson wins Jeopardy!\n• 2016: AlphaGo defeats Go world champion\n• 2022: ChatGPT revolutionizes conversational AI"
+            },
+            {
+              "order_index": 3,
+              "title": "Types of AI",
+              "content": "AI can be categorized in several ways:\n\n**By Capability:**\n• Narrow AI (ANI): Specialized in one area\n• General AI (AGI): Human-level intelligence\n• Super AI (ASI): Surpasses human intelligence\n\n**By Functionality:**\n• Reactive Machines: Basic AI that reacts to inputs\n• Limited Memory: Can use past experiences\n• Theory of Mind: Understands emotions\n• Self-Aware: Has consciousness\n\nCurrently, all existing AI systems are Narrow AI."
+            }
+          ]
+        },
+        {
+          "order_index": 2,
+          "title": "Machine Learning Basics",
+          "slug": "ml-basics",
+          "description": "Introduction to machine learning",
+          "estimated_minutes": 15,
+          "steps": [
+            {
+              "order_index": 1,
+              "title": "What is Machine Learning?",
+              "content": "Machine Learning (ML) is a subset of AI that enables systems to learn and improve from experience without being explicitly programmed.\n\nInstead of following pre-written rules, ML algorithms:\n• Identify patterns in data\n• Make decisions based on those patterns\n• Improve their performance over time\n\nThink of it like teaching a child to recognize animals - you show them examples, and they learn to identify new ones on their own."
+            },
+            {
+              "order_index": 2,
+              "title": "Types of Machine Learning",
+              "content": "There are three main types of machine learning:\n\n**1. Supervised Learning**\n• Learns from labeled examples\n• Like learning with a teacher\n• Used for: Classification, Regression\n\n**2. Unsupervised Learning**\n• Finds patterns in unlabeled data\n• Like exploring on your own\n• Used for: Clustering, Dimensionality reduction\n\n**3. Reinforcement Learning**\n• Learns through trial and error\n• Like learning to play a game\n• Used for: Game playing, Robotics, Autonomous systems"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order_index": 2,
+      "title": "Neural Networks",
+      "slug": "neural-networks",
+      "description": "Understanding neural networks and deep learning",
+      "lessons": [
+        {
+          "order_index": 1,
+          "title": "Introduction to Neural Networks",
+          "slug": "intro-neural-networks",
+          "description": "Learn how neural networks work",
+          "estimated_minutes": 12,
+          "steps": [
+            {
+              "order_index": 1,
+              "title": "What are Neural Networks?",
+              "content": "Neural networks are computing systems inspired by the biological neural networks in our brains.\n\n**Key Components:**\n• Neurons (Nodes): Process and transmit information\n• Connections (Edges): Link neurons together\n• Weights: Determine connection strength\n• Activation Functions: Decide if a neuron 'fires'\n\nJust like our brain uses billions of neurons to process information, artificial neural networks use layers of artificial neurons to learn patterns and make decisions."
+            },
+            {
+              "order_index": 2,
+              "title": "How Neural Networks Learn",
+              "content": "Neural networks learn through a process called training:\n\n**1. Forward Propagation**\n• Input data flows through the network\n• Each layer processes and transforms the data\n• Final layer produces an output\n\n**2. Calculate Error**\n• Compare output to expected result\n• Measure how wrong the prediction was\n\n**3. Backpropagation**\n• Send error backward through network\n• Adjust weights to reduce error\n• Repeat until network improves\n\nThis is like learning to throw darts - you adjust your aim based on where previous throws landed."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
