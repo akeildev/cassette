@@ -455,7 +455,7 @@ class VoiceOverlayAgent:
                         "action": "capture_screenshot",
                         "region": region
                     })
-                    
+
                     # Wait for response
                     msg = await ws.receive_json()
                     if msg.get("success"):
@@ -463,7 +463,7 @@ class VoiceOverlayAgent:
                         return msg["base64"]
                     else:
                         raise Exception(msg.get("error", "Screenshot capture failed"))
-                        
+
         except aiohttp.ClientError as e:
             logger.error(f"WebSocket connection error: {e}")
             raise Exception(f"Could not connect to screenshot service: {str(e)}")
