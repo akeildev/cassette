@@ -10,6 +10,8 @@ const {
 const path = require("path");
 const ConfigService = require("./services/ConfigService");
 const SettingsService = require("./services/SettingsService");
+const WindowService = require("./services/WindowService");
+const LiveKitService = require("./services/LiveKitService");
 
 // Global references
 let mainWindow = null;
@@ -86,11 +88,18 @@ async function initializeServices() {
     // Initialize settings
     await SettingsService.initialize();
 
+    // Initialize LiveKit service
+    const livekit = new LiveKitService(SettingsService);
+    await livekit.initialize();
+
     // Store references
     services = {
       config: ConfigService,
       settings: SettingsService,
+      window: WindowService,
+      livekit: livekit,
     };
+    setupLiveKitHandlers(livekit);
 
     console.log("Services initialized");
     console.log("Config:", ConfigService.getAll());
@@ -129,54 +138,62 @@ async function checkPermissions() {
  * Create the main window
  */
 function createMainWindow() {
-  mainWindow = new BrowserWindow({
-    width: 380,
-    height: 500,
-    minWidth: 320,
-    minHeight: 400,
-    frame: true,
-    transparent: false,
-    backgroundColor: "#f5f5f5",
-    resizable: true,
-    alwaysOnTop: true,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, "../renderer/preload.js"),
-      webSecurity: true,
-    },
+  const settings = SettingsService.getWindowSettings();
+
+  mainWindow = WindowService.createMainWindow({
+    alwaysOnTop: settings.alwaysOnTop,
+    width: settings.size?.width || 380,
+    height: settings.size?.height || 500,
   });
 
-  // For Phase 1, load a test page
-  mainWindow.loadURL(`data:text/html,
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Backend Test</title>
-            <style>
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                    padding: 20px;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                }
-                h1 { margin-bottom: 20px; }
-                .status { 
-                    background: rgba(255,255,255,0.2);
-                    padding: 10px;
-                    border-radius: 5px;
-                    margin: 10px 0;
-                }
-            </style>
-        </head>
-        <body>
-            <h1>Backend Running</h1>
-            <div class="status">Main Process: Active</div>
-            <div class="status">IPC Handlers: Ready</div>
-            <div class="status">Waiting for Frontend...</div>
-        </body>
-        </html>
-    `);
+  // Restore window position if available
+  WindowService.restoreWindowState(mainWindow);
+
+  // Load renderer or test page
+  if (process.env.TEST_MODE === "true") {
+    // Test mode - show backend status
+    mainWindow.loadURL(`data:text/html,
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Backend Test</title>
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                        padding: 20px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                    }
+                    h1 { margin-bottom: 20px; }
+                    .status { 
+                        background: rgba(255,255,255,0.2);
+                        padding: 10px;
+                        border-radius: 5px;
+                        margin: 10px 0;
+                    }
+                </style>
+            </head>
+            <body>
+                <h1>Backend Running</h1>
+                <div class="status">Main Process: Active</div>
+                <div class="status">IPC Handlers: Ready</div>
+                <div class="status">Waiting for Frontend...</div>
+            </body>
+            </html>
+        `);
+  } else {
+    // Normal mode - load renderer
+    const rendererPath = path.join(__dirname, "../renderer/index.html");
+    if (require("fs").existsSync(rendererPath)) {
+      mainWindow.loadFile(rendererPath);
+    } else {
+      // Fallback if renderer not ready
+      mainWindow.loadURL(`data:text/html,
+                <h1>Waiting for Frontend...</h1>
+                <p>Renderer not found at: ${rendererPath}</p>
+            `);
+    }
+  }
 
   // Window event handlers
   mainWindow.on("closed", () => {
@@ -197,23 +214,17 @@ function setupIPCHandlers() {
   // Voice session handlers
   ipcMain.handle("voice:start", async () => {
     console.log("[Backend] Voice start requested");
-    // Return mock data for now
-    return {
-      success: true,
-      url: process.env.LIVEKIT_URL || "wss://dummy.livekit.cloud",
-      token: "dummy-token-for-testing",
-      roomName: "test-room-" + Date.now(),
-    };
+    return await services.livekit.startSession({startAgent: true});
   });
 
   ipcMain.handle("voice:stop", async () => {
     console.log("[Backend] Voice stop requested");
-    return { success: true };
+    return await services.livekit.stopSession();
   });
 
   ipcMain.handle("voice:mute", async (event, muted) => {
     console.log("[Backend] Mute requested:", muted);
-    return { success: true, muted };
+    return await services.livekit.setMute(muted);
   });
 
   // Settings handlers
@@ -257,6 +268,35 @@ function setupIPCHandlers() {
   });
 
   console.log("IPC handlers registered");
+}
+
+function setupLiveKitHandlers(livekit) {
+  livekit.on("connected", (data) => {
+    console.log("[Main] LiveKit connected:", data);
+    WindowService.sendToRenderer("voice:status", {
+      connected: true,
+      room: data.room,
+    });
+  });
+
+  livekit.on("disconnected", () => {
+    console.log("[Main] LiveKit disconnected");
+    WindowService.sendToRenderer("voice:status", {
+      connected: false,
+    });
+  });
+
+  livekit.on("agent-log", (message) => {
+    // Could forward to renderer if needed
+    console.log("[Agent Log]:", message);
+  });
+
+  livekit.on("agent-error", (error) => {
+    console.error("[Agent Error]:", error);
+    WindowService.sendToRenderer("voice:error", {
+      message: error,
+    });
+  });
 }
 
 /**
