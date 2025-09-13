@@ -22,36 +22,17 @@ class CassetteUI {
         // State
         this.state = {
             isVoiceActive: false,
-            isMuted: false,
-            isConnected: false,
-            currentStatus: 'ready',
-            connectionInfo: null
+            isMuted: false
         };
         
-        // LiveKit components (will be initialized if available)
-        this.livekitClient = null;
-        this.screenshotClient = null;
+        // Animation interval
+        this.animationInterval = null;
         
         // Initialize
         this.init();
     }
     
     init() {
-        // Initialize LiveKit if available
-        if (window.LiveKitClient) {
-            this.livekitClient = new window.LiveKitClient();
-            this.setupLiveKitListeners();
-        }
-        
-        // Initialize screenshot client if available
-        if (window.ScreenshotClient) {
-            this.screenshotClient = new window.ScreenshotClient();
-            // Connect in background (non-blocking)
-            this.screenshotClient.connect().catch(err => 
-                console.log('Screenshot service not available:', err)
-            );
-        }
-        
         this.setupEventListeners();
         this.setupIPCListeners();
         this.loadInitialState();
@@ -168,148 +149,61 @@ class CassetteUI {
         }
     }
     
-    setupLiveKitListeners() {
-        if (!this.livekitClient) return;
-        
-        // Connection events
-        this.livekitClient.on('connected', (data) => {
-            console.log('LiveKit connected:', data);
-            this.updateStatus('connected', 'Connected');
-        });
-        
-        this.livekitClient.on('disconnected', () => {
-            console.log('LiveKit disconnected');
-            this.updateStatus('ready', 'Ready');
-            this.setVoiceActive(false);
-        });
-        
-        this.livekitClient.on('reconnecting', () => {
-            this.updateStatus('connecting', 'Reconnecting');
-        });
-        
-        this.livekitClient.on('reconnected', () => {
-            this.updateStatus('connected', 'Connected');
-        });
-        
-        // Audio level changes - make tape reels spin based on audio
-        this.livekitClient.on('audioLevelChanged', (data) => {
-            this.updateAudioLevel(data.level);
-        });
-        
-        // Data messages for transcripts
-        this.livekitClient.on('dataReceived', (data) => {
-            console.log('Data received:', data);
-            
-            if (data.topic === 'transcript') {
-                console.log('User:', data.data.text);
-            } else if (data.topic === 'agent_message') {
-                console.log('Assistant:', data.data.text);
-            }
-        });
-        
-        // Error handling
-        this.livekitClient.on('error', (data) => {
-            console.error('LiveKit error:', data);
-            this.showError(data.message);
-        });
-    }
     
-    async toggleVoice() {
+    toggleVoice() {
+        // Simple toggle - if active, stop. If not, start.
         if (this.state.isVoiceActive) {
-            await this.stopVoice();
+            this.stopVoice();
         } else {
-            await this.startVoice();
+            this.startVoice();
         }
     }
     
-    async startVoice() {
-        try {
-            // Update UI immediately
-            this.setVoiceActive(true);
-            this.updateStatus('connecting', 'Connecting');
-            
-            if (window.api) {
-                // Call backend
-                const result = await window.api.startVoice();
-                
-                if (result.success) {
-                    console.log('Voice started successfully:', result);
-                    
-                    // If LiveKit is available and we got connection info, connect
-                    if (this.livekitClient && result.url && result.token) {
-                        this.state.connectionInfo = {
-                            url: result.url,
-                            token: result.token,
-                            roomName: result.roomName
-                        };
-                        
-                        try {
-                            await this.livekitClient.connect(
-                                result.url,
-                                result.token,
-                                result.roomName
-                            );
-                        } catch (err) {
-                            console.log('LiveKit connection failed, continuing without it:', err);
-                        }
-                    }
-                    
-                    this.updateStatus('connected', 'Connected');
-                } else {
-                    throw new Error(result.error || 'Failed to start voice');
-                }
-            } else {
-                // Test mode - simulate connection and audio levels
-                setTimeout(() => {
-                    this.updateStatus('connected', 'Connected');
-                    // Simulate audio levels for testing the spinning reels
-                    this.simulateAudioLevels();
-                }, 1000);
-            }
-        } catch (error) {
-            console.error('Failed to start voice:', error);
-            this.setVoiceActive(false);
-            this.showError(error.message);
-        }
-    }
-    
-    async stopVoice() {
-        try {
-            // Disconnect from LiveKit first if connected
-            if (this.livekitClient && this.livekitClient.isConnected) {
-                await this.livekitClient.disconnect();
-            }
-            
-            // Update UI immediately
-            this.setVoiceActive(false);
-            
-            if (window.api) {
-                // Call backend
-                const result = await window.api.stopVoice();
-                
-                if (result.success) {
-                    console.log('Voice stopped successfully');
-                    this.updateStatus('ready', 'Ready');
-                } else {
-                    throw new Error(result.error || 'Failed to stop voice');
-                }
-            } else {
-                // Test mode
-                this.updateStatus('ready', 'Ready');
-            }
-        } catch (error) {
-            console.error('Failed to stop voice:', error);
-            this.showError(error.message);
-        }
-    }
-    
-    setVoiceActive(active) {
-        this.state.isVoiceActive = active;
+    startVoice() {
+        // Don't start if already active
+        if (this.state.isVoiceActive) return;
         
+        // Set state and start animation
+        this.state.isVoiceActive = true;
+        this.setVoiceUI(true);
+        this.simulateAudioLevels();
+        this.updateStatus('connected', 'Listening');
+        
+        // Call backend if available (but don't wait for it)
+        if (window.api) {
+            window.api.startVoice().catch(err => 
+                console.log('Backend call failed:', err)
+            );
+        }
+    }
+    
+    stopVoice() {
+        // Don't stop if not active
+        if (!this.state.isVoiceActive) return;
+        
+        // Stop animation
+        if (this.animationInterval) {
+            clearInterval(this.animationInterval);
+            this.animationInterval = null;
+        }
+        
+        // Set state and stop animation
+        this.state.isVoiceActive = false;
+        this.setVoiceUI(false);
+        this.updateStatus('ready', 'Ready');
+        
+        // Call backend if available (but don't wait for it)
+        if (window.api) {
+            window.api.stopVoice().catch(err => 
+                console.log('Backend call failed:', err)
+            );
+        }
+    }
+    
+    setVoiceUI(active) {
         if (active) {
-            // Start recording state
-            this.elements.voiceButton?.classList.add('active');
-            this.elements.voiceButton?.classList.add('spinning');
+            // Start recording state - just add spinning, not variable speeds
+            this.elements.voiceButton?.classList.add('active', 'spinning');
             this.elements.muteButton?.classList.add('spinning');
             
             // Show audio LEDs
@@ -321,40 +215,31 @@ class CassetteUI {
             if (this.elements.voiceButton?.querySelector('.reel-text')) {
                 this.elements.voiceButton.querySelector('.reel-text').textContent = 'STOP';
             }
-            
-            console.log('Voice activated');
         } else {
             // Stop recording state
-            this.elements.voiceButton?.classList.remove('active');
-            this.elements.voiceButton?.classList.remove('spinning');
-            this.elements.voiceButton?.classList.remove('spinning-slow');
-            this.elements.voiceButton?.classList.remove('spinning-fast');
+            this.elements.voiceButton?.classList.remove('active', 'spinning');
             this.elements.muteButton?.classList.remove('spinning');
-            this.elements.muteButton?.classList.remove('spinning-slow');
-            this.elements.muteButton?.classList.remove('spinning-fast');
             
-            // Hide audio LEDs
+            // Hide audio LEDs and reset them
             const audioLeds = document.getElementById('audioLeds');
             if (audioLeds) {
                 audioLeds.style.display = 'none';
+                // Reset all LED states
+                document.querySelectorAll('.audio-led').forEach(led => {
+                    led.classList.remove('active', 'mid', 'high');
+                });
             }
             
             if (this.elements.voiceButton?.querySelector('.reel-text')) {
                 this.elements.voiceButton.querySelector('.reel-text').textContent = 'REC';
             }
-            
-            console.log('Voice deactivated');
         }
     }
+    
     
     async toggleMute() {
         try {
             const newMutedState = !this.state.isMuted;
-            
-            // Update LiveKit mute state if connected
-            if (this.livekitClient && this.livekitClient.isConnected) {
-                await this.livekitClient.setMuted(newMutedState);
-            }
             
             if (window.api) {
                 // Call backend
@@ -404,35 +289,6 @@ class CassetteUI {
         }
     }
     
-    updateVoiceStatus(status) {
-        this.state.currentStatus = status;
-        
-        switch (status) {
-            case 'connecting':
-                this.updateStatus('connecting', 'Connecting');
-                break;
-            case 'connected':
-                this.updateStatus('connected', 'Connected');
-                break;
-            case 'listening':
-                this.updateStatus('connected', 'Listening');
-                break;
-            case 'processing':
-                this.updateStatus('connected', 'Processing');
-                break;
-            case 'speaking':
-                this.updateStatus('connected', 'Speaking');
-                break;
-            case 'disconnected':
-                this.setVoiceActive(false);
-                this.updateStatus('ready', 'Ready');
-                break;
-            case 'error':
-                this.setVoiceActive(false);
-                this.updateStatus('error', 'Error');
-                break;
-        }
-    }
     
     updateStatus(type, text) {
         if (this.elements.statusIndicator) {
@@ -447,25 +303,7 @@ class CassetteUI {
     updateAudioLevel(level) {
         if (!this.state.isVoiceActive || this.state.isMuted) return;
         
-        // Update tape reel spinning speed based on audio level
-        const reels = [this.elements.voiceButton, this.elements.muteButton];
-        reels.forEach(reel => {
-            if (reel) {
-                // Remove existing speed classes
-                reel.classList.remove('spinning', 'spinning-slow', 'spinning-fast');
-                
-                // Add speed class based on level
-                if (level > 0.7) {
-                    reel.classList.add('spinning-fast');
-                } else if (level > 0.3) {
-                    reel.classList.add('spinning');
-                } else {
-                    reel.classList.add('spinning-slow');
-                }
-            }
-        });
-        
-        // Update LED indicators
+        // Just update LED indicators, don't change spinning speed
         const leds = document.querySelectorAll('.audio-led');
         const activeLeds = Math.ceil(level * 5);
         
@@ -504,9 +342,16 @@ class CassetteUI {
     simulateAudioLevels() {
         if (!this.state.isVoiceActive) return;
         
-        const interval = setInterval(() => {
+        // Clear any existing interval first to prevent multiple
+        if (this.animationInterval) {
+            clearInterval(this.animationInterval);
+            this.animationInterval = null;
+        }
+        
+        this.animationInterval = setInterval(() => {
             if (!this.state.isVoiceActive) {
-                clearInterval(interval);
+                clearInterval(this.animationInterval);
+                this.animationInterval = null;
                 return;
             }
             
