@@ -1,0 +1,410 @@
+/* Retro Mini Cassette Pill UI */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #d4d0c8;
+    --bg-dark: #8b8680;
+    --tape-plastic: #2a2a2a;
+    --tape-label: #f0e6d2;
+    --text: #000000;
+    --text-light: #4a4a4a;
+    --accent-red: #cc0000;
+    --accent-green: #00cc00;
+    --shadow: rgba(0, 0, 0, 0.3);
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Courier New', monospace;
+    background: transparent;
+    color: var(--text);
+    overflow: hidden;
+    user-select: none;
+    -webkit-font-smoothing: none;
+}
+
+#app {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Main cassette container - pill shaped */
+.container {
+    background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);
+    border-radius: 25px;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    box-shadow: 
+        inset 0 1px 2px rgba(255, 255, 255, 0.1),
+        inset 0 -1px 2px rgba(0, 0, 0, 0.5),
+        0 4px 8px rgba(0, 0, 0, 0.4);
+    border: 1px solid #1a1a1a;
+    position: relative;
+}
+
+/* Subtle texture overlay */
+.container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+        90deg,
+        transparent,
+        transparent 2px,
+        rgba(255, 255, 255, 0.03) 2px,
+        rgba(255, 255, 255, 0.03) 4px
+    );
+    border-radius: 25px;
+    pointer-events: none;
+}
+
+/* Drag region for moving window */
+.drag-region {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 20px;
+    -webkit-app-region: drag;
+    cursor: move;
+}
+
+/* Subtle drag indicator dots */
+.drag-indicator {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 3px;
+    opacity: 0.3;
+    transition: opacity 0.2s;
+}
+
+.drag-dot {
+    width: 3px;
+    height: 3px;
+    background: #666;
+    border-radius: 50%;
+}
+
+.container:hover .drag-indicator {
+    opacity: 0.6;
+}
+
+.drag-region:hover .drag-indicator {
+    opacity: 0.8;
+}
+
+/* Window controls */
+.window-controls {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    z-index: 100;
+}
+
+.close-button {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+    color: #888;
+    cursor: pointer;
+    padding: 0;
+    width: 10px;
+    height: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.6;
+    transition: all 0.2s;
+    -webkit-app-region: no-drag;
+}
+
+.close-button:hover {
+    opacity: 1;
+    background: rgba(200, 0, 0, 0.3);
+    border-color: #800000;
+}
+
+.close-button svg {
+    width: 6px;
+    height: 6px;
+}
+
+/* Tape section layout */
+.tape-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+    z-index: 1;
+}
+
+/* Tape reel buttons - styled like actual cassette reels */
+.tape-reel-button {
+    width: 36px;
+    height: 36px;
+    background: radial-gradient(circle at 30% 30%, #4a4a4a, #1a1a1a);
+    border: 2px solid #0a0a0a;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, opacity 0.3s ease;
+    position: relative;
+    -webkit-app-region: no-drag;
+    box-shadow: 
+        inset 0 2px 4px rgba(0, 0, 0, 0.5),
+        inset 0 -1px 2px rgba(255, 255, 255, 0.1);
+}
+
+/* Inner reel teeth */
+.tape-reel-button::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: #0a0a0a;
+    border-radius: 50%;
+    box-shadow: 
+        inset 0 0 0 3px #1a1a1a,
+        inset 0 0 0 5px #0a0a0a,
+        inset 0 0 0 7px #1a1a1a;
+}
+
+.tape-reel-button:hover {
+    transform: rotate(15deg) scale(1.05);
+}
+
+.tape-reel-button:active {
+    transform: rotate(30deg) scale(0.95);
+}
+
+/* REC button with retro red dot */
+.rec-button::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: #cc0000;
+    border-radius: 50%;
+    position: absolute;
+    z-index: 2;
+    box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.5);
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.rec-button.active::before {
+    background: #ff0000;
+    box-shadow: 
+        0 0 8px #ff0000,
+        inset 0 -1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Both reels can spin when recording */
+.tape-reel-button.spinning {
+    animation: spin 4s linear infinite, fadeInSpin 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeInSpin {
+    0% { 
+        transform: rotate(0deg) scale(0.9);
+        opacity: 0.7;
+    }
+    50% {
+        transform: rotate(90deg) scale(0.95);
+        opacity: 0.85;
+    }
+    100% { 
+        transform: rotate(180deg) scale(1);
+        opacity: 1;
+    }
+}
+
+/* Variable speed spinning */
+.tape-reel-button.spinning-slow {
+    animation: spin 6s linear infinite;
+}
+
+.tape-reel-button.spinning-fast {
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    from { 
+        transform: rotate(0deg); 
+    }
+    to { 
+        transform: rotate(360deg); 
+    }
+}
+
+/* MUTE button styling */
+.mute-button {
+    position: relative;
+}
+
+.mute-button::before {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 8px;
+    background: transparent;
+    border: 2px solid #888;
+    border-right: none;
+    border-radius: 2px 0 0 2px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-70%, -50%);
+    z-index: 2;
+}
+
+.mute-button.active::before {
+    border-color: #cc0000;
+}
+
+/* Center section */
+.tape-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 8px;
+}
+
+/* Cassette label text */
+.cassette-label {
+    display: flex;
+}
+
+.cassette-title {
+    font-size: 7px;
+    color: #3a3a3a;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: bold;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* Status indicator - retro LED style */
+.tape-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    background: linear-gradient(180deg, #e8dcc0 0%, #d4c8a8 100%);
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    box-shadow: 
+        inset 0 1px 2px rgba(0, 0, 0, 0.2),
+        0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Audio level LEDs */
+.audio-leds {
+    display: flex;
+    gap: 2px;
+    padding: 2px 4px;
+    background: #1a1a1a;
+    border-radius: 3px;
+    height: 6px;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.audio-leds[style*="display: flex"] {
+    opacity: 1;
+}
+
+.audio-led {
+    width: 3px;
+    height: 4px;
+    background: #333;
+    border-radius: 1px;
+    transition: all 0.15s ease;
+}
+
+.audio-led.active {
+    background: #00ff00;
+    box-shadow: 0 0 2px #00ff00;
+}
+
+.audio-led.active.mid {
+    background: #ffaa00;
+    box-shadow: 0 0 2px #ffaa00;
+}
+
+.audio-led.active.high {
+    background: #ff3333;
+    box-shadow: 0 0 2px #ff3333;
+}
+
+.status-dot {
+    width: 4px;
+    height: 4px;
+    background: #00cc00;
+    border-radius: 50%;
+    box-shadow: 0 0 2px #00cc00;
+}
+
+.status-text {
+    font-size: 10px;
+    color: #2a2a2a;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+}
+
+/* Status variations */
+.status-indicator.connecting .status-dot,
+.status-indicator.connecting .status-text {
+    color: #ffaa00;
+    background: #ffaa00;
+    text-shadow: 0 0 2px #ffaa00;
+    box-shadow: 0 0 3px #ffaa00;
+}
+
+.status-indicator.error .status-dot,
+.status-indicator.error .status-text {
+    color: #ff0000;
+    background: #ff0000;
+    text-shadow: 0 0 2px #ff0000;
+    box-shadow: 0 0 3px #ff0000;
+}
+
+.status-indicator.ready .status-dot {
+    animation: led-blink 3s infinite;
+}
+
+@keyframes led-blink {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+}
+
+/* Hide text labels */
+.reel-text {
+    display: none;
+}

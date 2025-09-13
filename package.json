@@ -2,8 +2,9 @@
   "name": "cassette",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/main/main.js",
   "scripts": {
+    "start": "npx electron .",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:backend": "node test-backend.js",
     "test:livekit": "node test-livekit.js",
