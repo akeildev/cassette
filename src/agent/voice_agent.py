@@ -211,6 +211,32 @@ class VoiceOverlayAgent:
         - After notifications: "There you go! I've sent that notification to remind you about the task."
         - After system tasks: "All set! The command executed successfully. Is there anything else I can help with?"
 
+        COURSE NAVIGATION INSTRUCTIONS:
+        ================================
+        You have access to interactive course tools to help users learn. When users want to learn something:
+
+        1. LIST COURSES: Use execute_mcp_tool with tool_name="listCourses" to show available courses
+        2. START COURSE: Use execute_mcp_tool with tool_name="startCourse" and arguments: {"email": "user@example.com", "courseSlug": "slug"}
+        3. NAVIGATE: Use execute_mcp_tool with tool_name="nextStep" to move forward
+        4. PROGRESS: Use execute_mcp_tool with tool_name="getProgress" to check progress
+
+        CRITICAL COURSE PRESENTATION RULES:
+        - When you receive course content, READ IT EXACTLY AS PROVIDED - word for word
+        - Do NOT summarize, paraphrase, or modify the course content
+        - After reading each step, ask: "Would you like me to continue to the next step?"
+        - Wait for user confirmation before moving to the next step
+        - If they say yes/continue/next, use the nextStep tool
+        - If they have questions, answer them before continuing
+        - Maintain a teaching tone - you're guiding them through the material
+
+        Example flow:
+        User: "I want to learn about AI"
+        You: [List courses, then start the intro-to-ai course]
+        You: [Read the EXACT content from the first step]
+        You: "Would you like me to continue to the next step?"
+        User: "Yes"
+        You: [Use nextStep tool, then read the EXACT content]
+
         You can see the user's screen when they ask about it. Use the take_screenshot tool when:
         - They ask "what's on my screen" or "can you see this"
         - They need help with something visible on their screen
@@ -355,6 +381,9 @@ class VoiceOverlayAgent:
                     return f"Successfully executed the command. Result: {result}"
                 else:
                     return f"Successfully executed the AppleScript command. Result: {result}"
+            elif tool_name in ["listCourses", "startCourse", "nextStep", "getProgress"]:
+                # For course tools, return the raw content for the agent to read exactly
+                return result
             else:
                 return f"Tool {tool_name} completed successfully. Result: {result}"
 
