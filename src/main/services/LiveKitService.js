@@ -255,7 +255,10 @@ class LiveKitService extends EventEmitter {
         // Handle stdout
         this.agentProcess.stdout.on("data", (data) => {
           const message = data.toString();
-          console.log("[Agent]:", message.trim());
+          // Check if process is still alive before logging
+          if (this.agentProcess && !this.agentProcess.killed) {
+            console.log("[Agent]:", message.trim());
+          }
 
           // Check for successful connection
           if (
@@ -273,7 +276,10 @@ class LiveKitService extends EventEmitter {
         // Handle stderr
         this.agentProcess.stderr.on("data", (data) => {
           const error = data.toString();
-          console.error("[Agent Error]:", error.trim());
+          // Check if process is still alive before logging
+          if (this.agentProcess && !this.agentProcess.killed) {
+            console.error("[Agent Error]:", error.trim());
+          }
 
           // Check for import errors
           if (error.includes("ModuleNotFoundError")) {
@@ -296,7 +302,14 @@ class LiveKitService extends EventEmitter {
           console.log(
             `[LiveKitService] Agent exited with code ${code} (signal: ${signal})`
           );
-          this.agentProcess = null;
+
+          // Clean up streams to prevent EPIPE errors
+          if (this.agentProcess) {
+            this.agentProcess.stdout.removeAllListeners();
+            this.agentProcess.stderr.removeAllListeners();
+            this.agentProcess = null;
+          }
+
           this.emit("agent-exit", { code, signal });
 
           // If we haven't resolved yet, it failed to start
