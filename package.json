@@ -4,7 +4,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:backend": "node test-backend.js",
+    "test:livekit": "node test-livekit.js",
+    "test:voice-flow": "node test-voice-flow.js",
+    "test:voice": "node test-livekit-voice.js",
+    "test:console": "node test-console-voice.js",
+    "test:simple": "python test-voice-simple.py",
+    "test:comprehensive": "node test-livekit-comprehensive.js",
+    "create:room": "node create-test-room.js",
+    "setup:env": "node setup-env.js"
   },
   "repository": {
     "type": "git",
