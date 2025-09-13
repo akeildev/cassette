@@ -24,14 +24,34 @@ class CassetteUI {
             isVoiceActive: false,
             isMuted: false,
             isConnected: false,
-            currentStatus: 'ready'
+            currentStatus: 'ready',
+            connectionInfo: null
         };
+        
+        // LiveKit components (will be initialized if available)
+        this.livekitClient = null;
+        this.screenshotClient = null;
         
         // Initialize
         this.init();
     }
     
     init() {
+        // Initialize LiveKit if available
+        if (window.LiveKitClient) {
+            this.livekitClient = new window.LiveKitClient();
+            this.setupLiveKitListeners();
+        }
+        
+        // Initialize screenshot client if available
+        if (window.ScreenshotClient) {
+            this.screenshotClient = new window.ScreenshotClient();
+            // Connect in background (non-blocking)
+            this.screenshotClient.connect().catch(err => 
+                console.log('Screenshot service not available:', err)
+            );
+        }
+        
         this.setupEventListeners();
         this.setupIPCListeners();
         this.loadInitialState();
@@ -148,6 +168,52 @@ class CassetteUI {
         }
     }
     
+    setupLiveKitListeners() {
+        if (!this.livekitClient) return;
+        
+        // Connection events
+        this.livekitClient.on('connected', (data) => {
+            console.log('LiveKit connected:', data);
+            this.updateStatus('connected', 'Connected');
+        });
+        
+        this.livekitClient.on('disconnected', () => {
+            console.log('LiveKit disconnected');
+            this.updateStatus('ready', 'Ready');
+            this.setVoiceActive(false);
+        });
+        
+        this.livekitClient.on('reconnecting', () => {
+            this.updateStatus('connecting', 'Reconnecting');
+        });
+        
+        this.livekitClient.on('reconnected', () => {
+            this.updateStatus('connected', 'Connected');
+        });
+        
+        // Audio level changes - make tape reels spin based on audio
+        this.livekitClient.on('audioLevelChanged', (data) => {
+            this.updateAudioLevel(data.level);
+        });
+        
+        // Data messages for transcripts
+        this.livekitClient.on('dataReceived', (data) => {
+            console.log('Data received:', data);
+            
+            if (data.topic === 'transcript') {
+                console.log('User:', data.data.text);
+            } else if (data.topic === 'agent_message') {
+                console.log('Assistant:', data.data.text);
+            }
+        });
+        
+        // Error handling
+        this.livekitClient.on('error', (data) => {
+            console.error('LiveKit error:', data);
+            this.showError(data.message);
+        });
+    }
+    
     async toggleVoice() {
         if (this.state.isVoiceActive) {
             await this.stopVoice();
@@ -168,14 +234,36 @@ class CassetteUI {
                 
                 if (result.success) {
                     console.log('Voice started successfully:', result);
+                    
+                    // If LiveKit is available and we got connection info, connect
+                    if (this.livekitClient && result.url && result.token) {
+                        this.state.connectionInfo = {
+                            url: result.url,
+                            token: result.token,
+                            roomName: result.roomName
+                        };
+                        
+                        try {
+                            await this.livekitClient.connect(
+                                result.url,
+                                result.token,
+                                result.roomName
+                            );
+                        } catch (err) {
+                            console.log('LiveKit connection failed, continuing without it:', err);
+                        }
+                    }
+                    
                     this.updateStatus('connected', 'Connected');
                 } else {
                     throw new Error(result.error || 'Failed to start voice');
                 }
             } else {
-                // Test mode - simulate connection
+                // Test mode - simulate connection and audio levels
                 setTimeout(() => {
                     this.updateStatus('connected', 'Connected');
+                    // Simulate audio levels for testing the spinning reels
+                    this.simulateAudioLevels();
                 }, 1000);
             }
         } catch (error) {
@@ -187,6 +275,11 @@ class CassetteUI {
     
     async stopVoice() {
         try {
+            // Disconnect from LiveKit first if connected
+            if (this.livekitClient && this.livekitClient.isConnected) {
+                await this.livekitClient.disconnect();
+            }
+            
             // Update UI immediately
             this.setVoiceActive(false);
             
@@ -216,6 +309,15 @@ class CassetteUI {
         if (active) {
             // Start recording state
             this.elements.voiceButton?.classList.add('active');
+            this.elements.voiceButton?.classList.add('spinning');
+            this.elements.muteButton?.classList.add('spinning');
+            
+            // Show audio LEDs
+            const audioLeds = document.getElementById('audioLeds');
+            if (audioLeds) {
+                audioLeds.style.display = 'flex';
+            }
+            
             if (this.elements.voiceButton?.querySelector('.reel-text')) {
                 this.elements.voiceButton.querySelector('.reel-text').textContent = 'STOP';
             }
@@ -224,6 +326,19 @@ class CassetteUI {
         } else {
             // Stop recording state
             this.elements.voiceButton?.classList.remove('active');
+            this.elements.voiceButton?.classList.remove('spinning');
+            this.elements.voiceButton?.classList.remove('spinning-slow');
+            this.elements.voiceButton?.classList.remove('spinning-fast');
+            this.elements.muteButton?.classList.remove('spinning');
+            this.elements.muteButton?.classList.remove('spinning-slow');
+            this.elements.muteButton?.classList.remove('spinning-fast');
+            
+            // Hide audio LEDs
+            const audioLeds = document.getElementById('audioLeds');
+            if (audioLeds) {
+                audioLeds.style.display = 'none';
+            }
+            
             if (this.elements.voiceButton?.querySelector('.reel-text')) {
                 this.elements.voiceButton.querySelector('.reel-text').textContent = 'REC';
             }
@@ -235,6 +350,11 @@ class CassetteUI {
     async toggleMute() {
         try {
             const newMutedState = !this.state.isMuted;
+            
+            // Update LiveKit mute state if connected
+            if (this.livekitClient && this.livekitClient.isConnected) {
+                await this.livekitClient.setMuted(newMutedState);
+            }
             
             if (window.api) {
                 // Call backend
@@ -324,6 +444,48 @@ class CassetteUI {
         }
     }
     
+    updateAudioLevel(level) {
+        if (!this.state.isVoiceActive || this.state.isMuted) return;
+        
+        // Update tape reel spinning speed based on audio level
+        const reels = [this.elements.voiceButton, this.elements.muteButton];
+        reels.forEach(reel => {
+            if (reel) {
+                // Remove existing speed classes
+                reel.classList.remove('spinning', 'spinning-slow', 'spinning-fast');
+                
+                // Add speed class based on level
+                if (level > 0.7) {
+                    reel.classList.add('spinning-fast');
+                } else if (level > 0.3) {
+                    reel.classList.add('spinning');
+                } else {
+                    reel.classList.add('spinning-slow');
+                }
+            }
+        });
+        
+        // Update LED indicators
+        const leds = document.querySelectorAll('.audio-led');
+        const activeLeds = Math.ceil(level * 5);
+        
+        leds.forEach((led, index) => {
+            led.classList.remove('active', 'mid', 'high');
+            
+            if (index < activeLeds) {
+                led.classList.add('active');
+                
+                if (index >= 3) {
+                    led.classList.add('mid');
+                }
+                if (index >= 4) {
+                    led.classList.remove('mid');
+                    led.classList.add('high');
+                }
+            }
+        });
+    }
+    
     showError(message) {
         this.updateStatus('error', 'Error');
         
@@ -336,6 +498,22 @@ class CassetteUI {
                 this.updateStatus('ready', 'Ready');
             }
         }, 3000);
+    }
+    
+    // Simulate audio levels for testing
+    simulateAudioLevels() {
+        if (!this.state.isVoiceActive) return;
+        
+        const interval = setInterval(() => {
+            if (!this.state.isVoiceActive) {
+                clearInterval(interval);
+                return;
+            }
+            
+            // Generate random audio level
+            const level = Math.random() * 0.8 + 0.1;
+            this.updateAudioLevel(level);
+        }, 200);
     }
 }
 

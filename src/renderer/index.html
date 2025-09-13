@@ -30,13 +30,17 @@
                 </button>
                 
                 <div class="tape-center">
-                    <div class="cassette-label">
-                        <div class="cassette-title">Cassette</div>
-                    </div>
                     <div class="tape-controls">
                         <div class="status-indicator" id="statusIndicator">
                             <span class="status-dot"></span>
                             <span class="status-text">Ready</span>
+                        </div>
+                        <div class="audio-leds" id="audioLeds" style="display: none;">
+                            <span class="audio-led" data-level="1"></span>
+                            <span class="audio-led" data-level="2"></span>
+                            <span class="audio-led" data-level="3"></span>
+                            <span class="audio-led" data-level="4"></span>
+                            <span class="audio-led" data-level="5"></span>
                         </div>
                     </div>
                 </div>
@@ -49,7 +53,19 @@
         </div>
     </div>
     
-    <!-- Load JavaScript -->
+    <!-- LiveKit SDK from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.5.2/dist/livekit-client.umd.min.js"></script>
+    <script>
+        // Make LiveKit available globally
+        window.LivekitClient = window.LivekitClient || window.LiveKit;
+    </script>
+    
+    <!-- Load additional scripts -->
+    <script src="livekitClient.js"></script>
+    <script src="audioVisualizer.js"></script>
+    <script src="screenshotClient.js"></script>
+    
+    <!-- Main UI script loaded last -->
     <script src="index.js"></script>
 </body>
 </html>
