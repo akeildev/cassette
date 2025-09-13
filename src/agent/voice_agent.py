@@ -78,7 +78,7 @@ class VoiceOverlayAgent:
         # Combine existing tools with MCP tools
         tools = [
             self.take_screenshot,
-            # self.execute_mcp_tool,  # MCP tool executor - temporarily disabled
+            self.execute_mcp_tool,  # MCP tool executor
         ]
         
         agent = Agent(
@@ -86,20 +86,45 @@ class VoiceOverlayAgent:
             tools=tools
         )
         
+        # Resolve ElevenLabs configuration with robust logging and safer defaults
+        eleven_api_key = os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY")
+        eleven_voice_id = os.getenv("ELEVEN_VOICE_ID") or os.getenv("ELEVENLABS_VOICE_ID") or "EXAVITQu4vr4xnSDxMaL"
+        eleven_model_env = os.getenv("ELEVEN_MODEL_ID")
+        eleven_model = self._normalize_eleven_model_id(eleven_model_env)
+
+        if not eleven_api_key:
+            logger.warning("ELEVEN_API_KEY/ELEVENLABS_API_KEY is not set; TTS will likely fail")
+        else:
+            masked = f"***{eleven_api_key[-6:]}" if len(eleven_api_key) > 6 else "***"
+            logger.info(f"ElevenLabs API key detected: {masked}")
+        logger.info(f"ElevenLabs voice: {eleven_voice_id}, model: {eleven_model}")
+
+        # Optional: preflight check to validate ElevenLabs key quickly (non-fatal)
+        try:
+            await self._tts_preflight_check(eleven_api_key)
+        except Exception as preflight_err:
+            logger.warning(f"TTS preflight check failed: {preflight_err}")
+
+        # Validate voice id against account (non-fatal; will fall back)
+        try:
+            eleven_voice_id = await self._resolve_voice_id(eleven_api_key, eleven_voice_id)
+        except Exception as voice_err:
+            logger.warning(f"Voice validation skipped/failed: {voice_err}")
+
         # Create agent session with working OpenAI Realtime configuration
         self.session = AgentSession(
             llm=openai.realtime.RealtimeModel(
                 model="gpt-4o-realtime-preview",
-                modalities=["text"],  # Key: Text-only mode for use with separate TTS
+                modalities=["text"],  # Text-only mode for use with separate TTS
                 input_audio_transcription=InputAudioTranscription(
                     model="whisper-1",
                     language="en",
                 ),
             ),
             tts=elevenlabs.TTS(
-                voice_id=os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL"),
-                model="eleven_turbo_v2_5",
-                api_key=os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY"),
+                voice_id=eleven_voice_id,
+                model=eleven_model,
+                api_key=eleven_api_key,
             ),
             vad=silero.VAD.load(
                 min_speech_duration=0.2,
@@ -154,7 +179,7 @@ class VoiceOverlayAgent:
         """Wrapper for TTS output - ensures text is spoken clearly"""
         if self.session:
             try:
-                logger.info(f"Speaking through TTS: '{text}'")
+                logger.info(f"TTS request → '{text}'")
 
                 # Add a small pause before speaking for clarity
                 await asyncio.sleep(0.2)
@@ -164,24 +189,25 @@ class VoiceOverlayAgent:
                     instructions=f"Speak this message clearly to the user: '{text}'"
                 )
 
-                # Wait for the speech to complete
+                # Wait for the speech to initialize (if supported)
                 if hasattr(handle, "wait_for_initialization"):
                     await handle.wait_for_initialization()
+                    logger.info("TTS playback initialized")
 
                 # Add a small pause after speaking for clarity
                 await asyncio.sleep(0.3)
 
-                logger.info(f"Successfully spoke: '{text}'")
+                logger.info("TTS playback request completed")
 
             except Exception as e:
-                logger.error(f"TTS error while speaking '{text}': {e}")
+                logger.error(f"TTS error while speaking '{text}': {e}", exc_info=True)
                 # Fallback: Try alternative TTS method
                 try:
                     if hasattr(self.session, 'say'):
                         await self.session.say(text)
-                        logger.info(f"Used fallback TTS for: '{text}'")
+                        logger.info(f"Fallback TTS succeeded for: '{text}'")
                 except Exception as fallback_error:
-                    logger.error(f"Fallback TTS also failed: {fallback_error}")
+                    logger.error(f"Fallback TTS also failed: {fallback_error}", exc_info=True)
             
     async def _send_greeting(self):
         """Send initial greeting to user"""
@@ -194,15 +220,9 @@ class VoiceOverlayAgent:
         if self.mcp_router and self.mcp_router.tools:
             tool_count = len(self.mcp_router.tools)
             greeting += f" I have {tool_count} tools available to help with various tasks."
-
-        # Send greeting using generate_reply - this triggers the conversation properly
-        handle = await self.session.generate_reply(
-            instructions=f"Say EXACTLY this and nothing else: '{greeting}'"
-        )
-
-        # Wait for greeting to complete
-        if hasattr(handle, "wait_for_initialization"):
-            await handle.wait_for_initialization()
+        
+        # Use the safer TTS wrapper so we capture any errors
+        await self._say_wrapper(greeting)
             
     def _get_system_instructions(self):
         """Get system instructions for the agent"""
@@ -210,15 +230,105 @@ class VoiceOverlayAgent:
         Be concise, friendly, and helpful. Focus on understanding the user's needs and providing
         clear, actionable responses.
 
+        IMPORTANT CONVERSATION FLOW:
+        ============================
+        - Always provide natural conversational responses, especially after completing tasks
+        - When you use tools, explain what you've accomplished in a friendly, conversational way
+        - Don't just acknowledge completion - provide context and offer follow-up help
+        - Maintain natural conversation flow throughout the interaction
+
+        EXAMPLES OF GOOD RESPONSES AFTER TOOL USAGE:
+        - After creating a reminder: "I've added that reminder for you! You'll get notified at 5 PM today."
+        - After calendar events: "Perfect! I've added the meeting to your calendar for tomorrow at 2 PM."
+        - After notifications: "There you go! I've sent that notification to remind you about the task."
+        - After system tasks: "All set! The command executed successfully. Is there anything else I can help with?"
+
         You can see the user's screen when they ask about it. Use the take_screenshot tool when:
         - They ask "what's on my screen" or "can you see this"
         - They need help with something visible on their screen
         - They want you to read or analyze visual content
         - They ask about errors, UI elements, or applications they're using
 
-        For system operations, use the execute_mcp_tool function with appropriate tool names.
+        CRITICAL INSTRUCTION FOR ALL MACOS OPERATIONS:
+        ================================================
+        You have ONLY ONE TOOL for macOS operations: execute_mcp_tool with tool_name="applescript_execute"
+
+        NEVER create fake tool names. ALWAYS use:
+        - Function: execute_mcp_tool
+        - tool_name: "applescript_execute"
+        - arguments: {"code_snippet": "<your AppleScript code here>"}
+
+        CRITICAL: In AppleScript code_snippet formatting:
+        - Use regular double quotes " inside the AppleScript (NOT escaped)
+        - Use \\n for line breaks between AppleScript lines
+        - The code_snippet is a normal string - let JSON handle the escaping
+
+        Examples of AppleScript operations:
+
+        1. REMINDERS (with proper date/time handling):
+        - Create reminder for specific time today:
+          code_snippet: "set reminderDate to (current date) + (5 * hours)\\ntell application \\"Reminders\\" to make new reminder with properties {name:\\"Task\\", remind me date:reminderDate}"
+        - Create reminder for tomorrow at specific time:
+          set reminderDate to (current date) + (1 * days)
+          set hours of reminderDate to 17 -- 5 PM
+          set minutes of reminderDate to 0
+          tell application "Reminders" to make new reminder with properties {name:"Task", remind me date:reminderDate}
+        - List: tell application "Reminders" to get name of every reminder
+
+        2. CALENDAR (IMPORTANT: Use proper date/time formats with timezone):
+        - Get timezone first: do shell script "date +%Z"
+        - Get first calendar: tell application "Calendar" to get name of first calendar
+        - Create event with proper date format (use calendar 1 or "Work"):
+          set eventDate to current date
+          set day of eventDate to 25
+          set month of eventDate to 12
+          set year of eventDate to 2024
+          set hours of eventDate to 15
+          set minutes of eventDate to 0
+          tell application "Calendar" to make new event at calendar 1 with properties {summary:"Meeting", start date:eventDate, end date:eventDate + (60 * minutes)}
+        - Create event for specific time today/tomorrow:
+          set eventDate to (current date) + (5 * hours) -- for 5 hours from now
+          tell application "Calendar" to make new event at calendar 1 with properties {summary:"Test", start date:eventDate, end date:eventDate + (60 * minutes)}
+        - Check calendar: tell application "Calendar" to get summary of every event of calendar 1
+
+        3. MESSAGES:
+        - Send: tell application "Messages" to send "Hello" to buddy "+1234567890"
+
+        4. NOTES:
+        - Create: tell application "Notes" to make new note with properties {name:"Title", body:"Content"}
+        - Read: tell application "Notes" to get body of note 1
+
+        5. SYSTEM INFO:
+        - Battery: do shell script "pmset -g batt | grep -o '[0-9]*%'"
+        - WiFi: do shell script "networksetup -getairportnetwork en0"
+        - Disk space: do shell script "df -h / | tail -1"
+
+        6. FINDER/FILES:
+        - List files: tell application "Finder" to get name of every file of desktop
+        - Open folder: tell application "Finder" to open folder "Documents" of home
+
+        7. SAFARI:
+        - Open URL: tell application "Safari" to open location "https://example.com"
+        - Get URL: tell application "Safari" to get URL of current tab of window 1
+
+        8. NOTIFICATIONS:
+        - Show: display notification "Message" with title "Title"
+
+        REMEMBER: There is NO "reminders_add", "calendar_create", "messages_send" tool!
+        ONLY use execute_mcp_tool with tool_name="applescript_execute" for EVERYTHING!
 
         Always describe actions in natural language without mentioning tool names.
+
+        EXECUTION FLOW:
+        1. When user asks to add something to calendar/reminders, acknowledge and execute immediately
+        2. After successful execution, confirm: "I've added [event] to your calendar" or "Your reminder is set"
+        3. If there's an error, explain what went wrong
+
+        TIMEZONE AWARENESS:
+        - Detect user's timezone with: do shell script "date +%Z"
+        - Always use proper AppleScript date objects with correct timezone
+        - For "5pm today", calculate from current date/time
+        - For "tomorrow at 3pm", add days then set specific hours
 
         After completing tasks, summarize the results conversationally.
 
@@ -228,6 +338,7 @@ class VoiceOverlayAgent:
         if self.mcp_router and self.mcp_router.tools:
             tool_names = [tool.name for tool in self.mcp_router.tools[:10]]
             base_instructions += f"\n\nAvailable MCP tools: {', '.join(tool_names)}"
+            base_instructions += "\nREMEMBER: Use applescript_execute for ALL system operations!"
         
         # Add any custom instructions from metadata
         custom_instructions = self.metadata.get("instructions", "")
@@ -240,86 +351,48 @@ class VoiceOverlayAgent:
         self,
         context: RunContext,
         tool_name: str,
-        arguments: dict = None,
-        request_screenshot_first: bool = False
+        arguments: Optional[Dict[str, Any]] = None
     ) -> str:
-        """
-        Execute an MCP tool with optional screenshot context
-        
-        Args:
-            tool_name: Name of the MCP tool to execute
-            arguments: Arguments to pass to the tool
-            request_screenshot_first: Whether to capture screen before execution
-            
-        Returns:
-            Result of tool execution or error message
-        """
+        """Execute an MCP tool and return results for LLM processing"""
         logger.info(f"MCP tool execution requested: {tool_name}")
-        
+
         try:
             if not self.mcp_router:
-                error_msg = "MCP tools are not available at the moment."
-                logger.warning(error_msg)
-                return error_msg
-            
-            # Capture screenshot if requested
-            screenshot_context = None
-            if request_screenshot_first:
-                logger.info("Capturing screenshot for tool context")
-                try:
-                    screenshot_b64 = await self._request_screenshot("full")
-                    screenshot_context = await self._analyze_with_vision(
-                        screenshot_b64, 
-                        f"Provide context for executing {tool_name}"
-                    )
-                    logger.info("Screenshot context captured successfully")
-                except Exception as e:
-                    logger.error(f"Screenshot capture failed: {e}")
-            
-            # Find the tool
+                return "MCP tools are not available at the moment."
+
             tool = self.mcp_router.get_tool_by_name(tool_name)
             if not tool:
-                # Try to find similar tools
-                similar = self.mcp_router.find_tools(tool_name, max_results=3)
-                if similar:
-                    suggestions = ", ".join([t.name for t in similar])
-                    logger.info(f"Tool '{tool_name}' not found, suggesting: {suggestions}")
-                    return f"Tool '{tool_name}' not found. Did you mean: {suggestions}?"
-                
-                logger.warning(f"Tool '{tool_name}' not found and no suggestions available")
                 return f"Tool '{tool_name}' not found."
-            
-            # Add screenshot context to arguments if available
-            if screenshot_context and arguments:
-                arguments["_context"] = screenshot_context
-            
-            # Execute the tool directly
-            logger.info(f"Executing tool: {tool_name}")
+
+            # Execute tool without any manual TTS - let conversation flow naturally
             result = await self.mcp_router.call_tool(
                 tool,
                 arguments or {},
                 timeout=30
             )
-            
-            # Summarize the result for voice output
-            summary = ToolResultSummarizer.summarize(tool_name, result)
-            logger.info(f"Tool execution completed: {summary}")
-            return summary
-                
-        except Exception as e:
-            logger.error(f"MCP tool execution error: {e}", exc_info=True)
-            self.error_logger.log_tool_execution_error(tool_name, arguments or {}, e)
-            
-            # Provide user-friendly error message
-            error_str = str(e).lower()
-            if "timeout" in error_str:
-                return "The tool took too long to respond. Please try again."
-            elif "permission" in error_str:
-                return "I don't have permission to do that."
-            elif "not found" in error_str:
-                return "I couldn't find what you're looking for."
+
+            logger.info(f"Tool {tool_name} completed successfully")
+
+            # Return detailed result for LLM to process and generate natural response
+            if tool_name == "applescript_execute":
+                # Check the arguments to provide context about what was done
+                code_snippet = arguments.get("code_snippet", "") if arguments else ""
+                if "Calendar" in code_snippet and "make new event" in code_snippet:
+                    return "Successfully created a new calendar event as requested."
+                elif "Reminders" in code_snippet and "make new reminder" in code_snippet:
+                    return "Successfully added the reminder to your reminders list."
+                elif "display notification" in code_snippet:
+                    return "Successfully displayed the notification."
+                elif "do shell script" in code_snippet:
+                    return f"Successfully executed the command. Result: {result}"
+                else:
+                    return f"Successfully executed the AppleScript command. Result: {result}"
             else:
-                return f"I couldn't execute that tool. Please check the logs for details."
+                return f"Tool {tool_name} completed successfully. Result: {result}"
+
+        except Exception as e:
+            logger.error(f"MCP tool execution error: {e}")
+            return f"I encountered an error while executing {tool_name}: {str(e)}"
         
     @function_tool
     async def take_screenshot(
@@ -440,9 +513,84 @@ class VoiceOverlayAgent:
             await self.mcp_router.stop()
         if self.session:
             logger.info("Stopping agent session...")
-            await self.session.stop()
+            await self.session.end()
         
         logger.info("✓ Cleanup complete")
+
+    async def _tts_preflight_check(self, api_key: Optional[str]):
+        """Quickly validate ElevenLabs API key by listing voices (non-fatal)."""
+        if not api_key:
+            raise ValueError("Missing ElevenLabs API key")
+        try:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                headers = {
+                    "xi-api-key": api_key,
+                    "accept": "application/json",
+                }
+                async with session.get("https://api.elevenlabs.io/v1/voices", headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        count = len(data.get("voices", []))
+                        logger.info(f"ElevenLabs preflight OK - {count} voice(s) accessible")
+                    else:
+                        text = await resp.text()
+                        raise RuntimeError(f"HTTP {resp.status}: {text[:200]}")
+        except Exception as e:
+            # Bubble up to caller to log a single warning (keeps noise low)
+            raise
+
+    async def _resolve_voice_id(self, api_key: Optional[str], desired_voice_id: str) -> str:
+        """Ensure the configured voice ID exists; if not, pick a valid fallback and log."""
+        if not api_key:
+            raise ValueError("Missing ElevenLabs API key for voice validation")
+        timeout = aiohttp.ClientTimeout(total=6)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            headers = {
+                "xi-api-key": api_key,
+                "accept": "application/json",
+            }
+            async with session.get("https://api.elevenlabs.io/v1/voices", headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise RuntimeError(f"Voice list HTTP {resp.status}: {text[:200]}")
+                data = await resp.json()
+                voices = data.get("voices", []) or []
+                voice_ids = {v.get("voice_id"): v for v in voices if v.get("voice_id")}
+                if desired_voice_id in voice_ids:
+                    logger.info(f"Using configured ElevenLabs voice: {desired_voice_id}")
+                    return desired_voice_id
+                if voices:
+                    fallback = voices[0].get("voice_id")
+                    name = voices[0].get("name") or "unknown"
+                    logger.warning(
+                        f"Configured voice_id '{desired_voice_id}' not found. Falling back to '{name}' ({fallback})."
+                    )
+                    return fallback or desired_voice_id
+                logger.warning("No voices available in ElevenLabs account; keeping configured voice id as-is")
+                return desired_voice_id
+
+    def _normalize_eleven_model_id(self, model_id: Optional[str]) -> str:
+        """Validate/normalize model id per ElevenLabs docs; choose sensible default if unset/unknown.
+
+        Reference: Turbo v2.5 and other model IDs listed in ElevenLabs documentation.
+        """
+        # Known common model ids from docs
+        known_models = {
+            "eleven_turbo_v2_5",
+            "eleven_turbo_v2",
+            "eleven_flash_v2_5",
+            "eleven_multilingual_v2",
+            "eleven_v3",
+        }
+        preferred_default = "eleven_turbo_v2_5"
+        if not model_id:
+            return preferred_default
+        model_id = model_id.strip()
+        if model_id in known_models:
+            return model_id
+        logger.warning(f"Unknown ELEVEN_MODEL_ID '{model_id}', defaulting to {preferred_default}")
+        return preferred_default
 
 
 async def entrypoint(ctx: JobContext):

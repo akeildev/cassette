@@ -32,7 +32,7 @@
         "system_events"
       ],
       "allowed_roots": [
-        "/Users/akeilsmith/clueless",
+        "/Users/akeilsmith/cassette",
         "/tmp",
         "~/Desktop",
         "~/Documents",

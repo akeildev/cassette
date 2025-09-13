@@ -19,7 +19,7 @@ class ToolProposal:
     needs_confirmation: bool
     request_screenshot: bool
     rationale: str
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'ToolProposal':
         """Create from dictionary"""
@@ -30,7 +30,7 @@ class ToolProposal:
             request_screenshot=data.get("request_screenshot", False),
             rationale=data.get("rationale", "")
         )
-    
+
     @classmethod
     def empty(cls) -> 'ToolProposal':
         """Create empty proposal"""
@@ -44,57 +44,64 @@ class ToolProposal:
 
 class VoiceInteractionHelper:
     """Helper for voice-based interactions"""
-    
+
     def __init__(self, session=None):
         self.session = session
         self.last_response = None
-        
+
     async def say(self, text: str) -> None:
         """Speak text to user through TTS"""
         if not self.session:
             logger.warning("No session available for TTS")
             return
-            
+
         try:
             logger.info(f"Speaking: {text}")
-            # Use the session's TTS capabilities
-            await self.session.say(text)
+            # Use the session's generate_reply for proper conversation flow
+            handle = await self.session.generate_reply(
+                instructions=f"Say EXACTLY this and nothing else: '{text}'"
+            )
+
+            # Wait for speech to complete
+            if hasattr(handle, "wait_for_initialization"):
+                await handle.wait_for_initialization()
+
         except Exception as e:
             logger.error(f"TTS error: {e}")
-    
+
     async def listen_yes_no(self, timeout: float = 6.0) -> bool:
         """Listen for yes/no response from user"""
         if not self.session:
             logger.warning("No session available for listening")
             return False
-            
+
         try:
             logger.info(f"Listening for yes/no (timeout: {timeout}s)")
-            
+
             # Create a custom listening context
             response = await asyncio.wait_for(
                 self._wait_for_yes_no(),
                 timeout=timeout
             )
-            
+
             return response
-            
+
         except asyncio.TimeoutError:
             logger.info("Yes/no response timeout")
             return False
         except Exception as e:
             logger.error(f"Listen error: {e}")
             return False
-    
+
     async def _wait_for_yes_no(self) -> bool:
         """Internal method to wait for yes/no in the conversation"""
         # This will be integrated with the LiveKit session's transcript
         # For now, return a placeholder
         # In production, this would monitor the session's transcript for yes/no patterns
-        
+
         positive_words = ["yes", "yeah", "yep", "sure", "okay", "ok", "go ahead", "do it", "confirm", "affirmative"]
         negative_words = ["no", "nope", "nah", "don't", "stop", "cancel", "negative", "abort"]
-        
+
         # TODO: Integrate with actual LiveKit transcript monitoring
         # This is a simplified version - in production would monitor real transcript
         await asyncio.sleep(2)  # Simulate listening
@@ -102,11 +109,11 @@ class VoiceInteractionHelper:
 
 class ToolResultSummarizer:
     """Summarizes tool execution results for voice output"""
-    
+
     @staticmethod
     def summarize(tool_name: str, result: Any, max_length: int = 250) -> str:
         """Create a concise summary of tool results"""
-        
+
         # Handle different result types
         if isinstance(result, dict):
             return ToolResultSummarizer._summarize_dict(tool_name, result, max_length)
@@ -116,7 +123,7 @@ class ToolResultSummarizer:
             return ToolResultSummarizer._summarize_string(tool_name, result, max_length)
         else:
             return f"The {tool_name} completed successfully."
-    
+
     @staticmethod
     def _summarize_dict(tool_name: str, result: dict, max_length: int) -> str:
         """Summarize dictionary results"""
@@ -126,45 +133,45 @@ class ToolResultSummarizer:
             if len(content) > max_length:
                 return content[:max_length-3] + "..."
             return content
-            
+
         if "message" in result:
             return str(result["message"])
-            
+
         if "status" in result:
             status = result["status"]
             if "data" in result:
                 return f"Status: {status}. {ToolResultSummarizer._summarize_data(result['data'], max_length-20)}"
             return f"Status: {status}"
-            
+
         # Generic dict summary
         items = []
         for key, value in list(result.items())[:3]:  # First 3 items
             if isinstance(value, (str, int, float, bool)):
                 items.append(f"{key}: {value}")
-        
+
         if items:
             summary = ", ".join(items)
             if len(summary) > max_length:
                 return summary[:max_length-3] + "..."
             return summary
-        
+
         return f"The {tool_name} returned a result with {len(result)} items."
-    
+
     @staticmethod
     def _summarize_list(tool_name: str, result: list, max_length: int) -> str:
         """Summarize list results"""
         if not result:
             return f"The {tool_name} returned no results."
-            
+
         count = len(result)
         if count == 1:
             # Single item - describe it
             item_summary = ToolResultSummarizer.summarize(tool_name, result[0], max_length)
             return item_summary
-        
+
         # Multiple items - summarize count and first few
         summary_parts = [f"Found {count} items"]
-        
+
         # Add first item details if it's a dict with useful info
         if isinstance(result[0], dict):
             if "name" in result[0]:
@@ -175,29 +182,29 @@ class ToolResultSummarizer:
                 titles = [str(item.get("title", "")) for item in result[:3] if "title" in item]
                 if titles:
                     summary_parts.append(f"including: {', '.join(titles)}")
-        
+
         summary = ". ".join(summary_parts)
         if len(summary) > max_length:
             return summary[:max_length-3] + "..."
         return summary
-    
+
     @staticmethod
     def _summarize_string(tool_name: str, result: str, max_length: int) -> str:
         """Summarize string results"""
         if len(result) <= max_length:
             return result
-        
+
         # Try to cut at sentence boundary
         truncated = result[:max_length-3]
         last_period = truncated.rfind('.')
         last_newline = truncated.rfind('\n')
-        
+
         cut_point = max(last_period, last_newline)
         if cut_point > max_length * 0.7:  # If we can preserve most of it
             return truncated[:cut_point+1] + "..."
-        
+
         return truncated + "..."
-    
+
     @staticmethod
     def _summarize_data(data: Any, max_length: int) -> str:
         """Summarize nested data"""
@@ -213,7 +220,7 @@ class ToolResultSummarizer:
 
 class ToolProposalParser:
     """Parses LLM responses to extract tool proposals"""
-    
+
     @staticmethod
     def parse(llm_response: str) -> ToolProposal:
         """Parse LLM response to extract tool proposal"""
@@ -222,27 +229,27 @@ class ToolProposalParser:
             # Handle case where LLM includes explanation with JSON
             json_start = llm_response.find('{')
             json_end = llm_response.rfind('}') + 1
-            
+
             if json_start >= 0 and json_end > json_start:
                 json_str = llm_response[json_start:json_end]
                 data = json.loads(json_str)
                 return ToolProposal.from_dict(data)
-            
+
             # If no valid JSON, return empty proposal
             return ToolProposal.empty()
-            
+
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse tool proposal: {e}")
             return ToolProposal.empty()
         except Exception as e:
             logger.error(f"Unexpected error parsing proposal: {e}")
             return ToolProposal.empty()
-    
+
     @staticmethod
     def create_prompt(user_query: str, available_tools: List[str], has_screenshot: bool = False) -> str:
         """Create prompt for LLM to propose tool usage"""
         tools_list = ", ".join(available_tools[:10])  # Limit to 10 tools in prompt
-        
+
         prompt = f"""Based on the user's request, propose a tool to use or indicate no tool is needed.
 
 User request: {user_query}
@@ -262,5 +269,5 @@ Reply ONLY with JSON in this exact format:
 
 If no tool is needed, set intent to empty string.
 If you need to see the screen first, set request_screenshot to true."""
-        
+
         return prompt

@@ -198,12 +198,15 @@ class LiveKitService extends EventEmitter {
           PYTHONPATH: path.join(__dirname, "../../agent"),
         };
         
-        // Log environment variables for debugging
+        // Log environment variables for debugging (without leaking secrets)
         console.log("[LiveKitService] Environment variables:");
         console.log("  LIVEKIT_URL:", env.LIVEKIT_URL ? "Set" : "Missing");
         console.log("  LIVEKIT_API_KEY:", env.LIVEKIT_API_KEY ? "Set" : "Missing");
         console.log("  LIVEKIT_API_SECRET:", env.LIVEKIT_API_SECRET ? "Set" : "Missing");
         console.log("  OPENAI_API_KEY:", env.OPENAI_API_KEY ? "Set" : "Missing");
+        console.log("  ELEVEN_API_KEY present:", env.ELEVEN_API_KEY ? "Yes" : "No");
+        console.log("  ELEVEN_VOICE_ID:", env.ELEVEN_VOICE_ID || this.settings.getVoiceConfig().voiceId || 'Default');
+        console.log("  ELEVEN_MODEL_ID:", env.ELEVEN_MODEL_ID || this.settings.getVoiceConfig().modelId || 'Default');
         console.log("  ROOM_NAME:", env.ROOM_NAME);
 
         // Determine Python command with full path
