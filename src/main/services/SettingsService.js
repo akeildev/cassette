@@ -36,9 +36,9 @@ class SettingsService {
       // API Keys (encrypted)
       openaiApiKey: "",
       elevenLabsApiKey: "",
-      livekitUrl: "",
-      livekitApiKey: "",
-      livekitApiSecret: "",
+      livekitUrl: process.env.LIVEKIT_URL || "",
+      livekitApiKey: process.env.LIVEKIT_API_KEY || "",
+      livekitApiSecret: process.env.LIVEKIT_API_SECRET || "",
 
       // Voice Configuration
       elevenLabsVoiceId: "21m00Tcm4TlvDq8ikWAM",
@@ -135,8 +135,14 @@ class SettingsService {
     const storeData = { ...defaults };
     this.store = {
       store: storeData,
-      get: (key, defaultValue) =>
-        storeData[key] !== undefined ? storeData[key] : defaultValue,
+      get: (key, defaultValue) => {
+        // If the key exists in store, return it
+        if (storeData[key] !== undefined) {
+          return storeData[key];
+        }
+        // Otherwise, return the default value (which can be env vars)
+        return defaultValue;
+      },
       set: (key, value) => {
         storeData[key] = value;
       },

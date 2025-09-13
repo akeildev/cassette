@@ -285,6 +285,46 @@ class LiveKitService extends EventEmitter {
     });
   }
 
+  async spawnPythonAgent(roomName) {
+    const agentPath = path.join(__dirname, '../../agent/voice_agent.py');
+    const venvPython = path.join(__dirname, '../../agent/venv/bin/python3');
+    
+    // Use venv Python if available, otherwise system Python
+    const pythonCmd = fs.existsSync(venvPython) ? venvPython : 'python3';
+    
+    logger.info(`Starting Python agent: ${pythonCmd} ${agentPath}`);
+    
+    const agentProcess = spawn(pythonCmd, [agentPath], {
+        env: {
+            ...process.env,
+            LIVEKIT_URL: this.settings.get('livekit.url'),
+            LIVEKIT_API_KEY: this.settings.get('livekit.apiKey'),
+            LIVEKIT_API_SECRET: this.settings.get('livekit.apiSecret'),
+            OPENAI_API_KEY: this.settings.get('openai.apiKey'),
+            ELEVENLABS_API_KEY: this.settings.get('elevenlabs.apiKey'),
+            PYTHONUNBUFFERED: '1'
+        },
+        cwd: path.dirname(agentPath)
+    });
+    
+    // Log output
+    agentProcess.stdout.on('data', (data) => {
+        logger.info(`[Python Agent] ${data.toString().trim()}`);
+    });
+    
+    agentProcess.stderr.on('data', (data) => {
+        logger.error(`[Python Agent Error] ${data.toString().trim()}`);
+    });
+    
+    agentProcess.on('exit', (code) => {
+        logger.info(`[Python Agent] Process exited with code ${code}`);
+        this.agentProcess = null;
+    });
+    
+    this.agentProcess = agentProcess;
+    logger.info('[Python Agent] Started successfully');
+  }
+
   /**
    * Stop the current session
    */
@@ -362,6 +402,13 @@ class LiveKitService extends EventEmitter {
     this.emit("mute-changed", { muted });
     return { success: true, muted };
   }
+
+
+
 }
+
+
+
+
 
 module.exports = LiveKitService;
