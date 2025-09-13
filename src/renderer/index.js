@@ -28,6 +28,22 @@ class CassetteUI {
         // Animation interval
         this.animationInterval = null;
         
+        // Audio elements for sound effects
+        this.sounds = {
+            start: new Audio('./sounds/Load Cassette Sound Effect.mp3'),
+            stop: new Audio('./sounds/Cassette Sound Effects.mp3'),
+            background: new Audio('./sounds/Cassette Sound Effect.mp3')
+        };
+        
+        // Setup background sound to loop and be quiet
+        this.sounds.background.loop = true;
+        this.sounds.background.volume = 0.1; // Really soft volume
+        
+        // Preload sounds
+        this.sounds.start.load();
+        this.sounds.stop.load();
+        this.sounds.background.load();
+        
         // Initialize
         this.init();
     }
@@ -36,6 +52,15 @@ class CassetteUI {
         this.setupEventListeners();
         this.setupIPCListeners();
         this.loadInitialState();
+        
+        // Test sound loading
+        this.sounds.start.addEventListener('error', (e) => {
+            console.error('Error loading start sound:', e);
+        });
+        this.sounds.stop.addEventListener('error', (e) => {
+            console.error('Error loading stop sound:', e);
+        });
+        
         console.log('Cassette UI initialized');
     }
     
@@ -63,6 +88,12 @@ class CassetteUI {
         
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
+            // Shift + ` to toggle voice
+            if (e.shiftKey && e.code === 'Backquote') {
+                e.preventDefault();
+                this.toggleVoice();
+            }
+            
             // Spacebar to toggle voice (when not typing)
             if (e.code === 'Space' && e.target === document.body) {
                 e.preventDefault();
@@ -163,11 +194,23 @@ class CassetteUI {
         // Don't start if already active
         if (this.state.isVoiceActive) return;
         
-        // Set state and start animation
+        // Play start sound
+        this.sounds.start.play().catch(err => console.log('Could not play start sound:', err));
+        
+        // Start background sound looping softly
+        this.sounds.background.play().catch(err => console.log('Could not play background sound:', err));
+        
+        // Set state and start animation with smooth transition
         this.state.isVoiceActive = true;
-        this.setVoiceUI(true);
-        this.simulateAudioLevels();
         this.updateStatus('connected', 'Listening');
+        
+        // Slightly longer delay for smoother transition
+        setTimeout(() => {
+            this.setVoiceUI(true);
+            setTimeout(() => {
+                this.simulateAudioLevels();
+            }, 100);
+        }, 100);
         
         // Call backend if available (but don't wait for it)
         if (window.api) {
@@ -180,6 +223,13 @@ class CassetteUI {
     stopVoice() {
         // Don't stop if not active
         if (!this.state.isVoiceActive) return;
+        
+        // Stop background sound
+        this.sounds.background.pause();
+        this.sounds.background.currentTime = 0;
+        
+        // Play stop sound
+        this.sounds.stop.play().catch(err => console.log('Could not play stop sound:', err));
         
         // Stop animation
         if (this.animationInterval) {
@@ -355,10 +405,10 @@ class CassetteUI {
                 return;
             }
             
-            // Generate random audio level
-            const level = Math.random() * 0.8 + 0.1;
+            // Generate smoother random audio level
+            const level = Math.random() * 0.6 + 0.2;
             this.updateAudioLevel(level);
-        }, 200);
+        }, 300);  // Slower update for smoother effect
     }
 }
 
