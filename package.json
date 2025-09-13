@@ -5,16 +5,21 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "npx electron .",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:all",
+    "test:all": "npm run test:integration && npm run test:ui && npm run test:voice",
+    "test:integration": "node test-integration.js",
+    "test:ui": "npx electron test-ui.js",
+    "test:voice": "node test-voice-flow.js",
     "test:backend": "node test-backend.js",
     "test:livekit": "node test-livekit.js",
     "test:voice-flow": "node test-voice-flow.js",
-    "test:voice": "node test-livekit-voice.js",
+    "test:voice-simple": "node test-livekit-voice.js",
     "test:console": "node test-console-voice.js",
     "test:simple": "python test-voice-simple.py",
     "test:comprehensive": "node test-livekit-comprehensive.js",
     "create:room": "node create-test-room.js",
-    "setup:env": "node setup-env.js"
+    "setup:env": "node setup-env.js",
+    "setup:python": "cd src/agent && python3 -m venv venv && ./venv/bin/pip install -r requirements.txt"
   },
   "repository": {
     "type": "git",
