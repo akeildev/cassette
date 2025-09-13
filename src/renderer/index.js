@@ -53,6 +53,12 @@ class CassetteUI {
         this.setupIPCListeners();
         this.loadInitialState();
         
+        // Initialize LiveKit if available
+        if (window.LiveKitClient) {
+            this.livekitClient = new window.LiveKitClient();
+            this.setupLiveKitListeners();
+        }
+        
         // Test sound loading
         this.sounds.start.addEventListener('error', (e) => {
             console.error('Error loading start sound:', e);
@@ -62,6 +68,54 @@ class CassetteUI {
         });
         
         console.log('Cassette UI initialized');
+    }
+    
+    setupLiveKitListeners() {
+        if (!this.livekitClient) return;
+        
+        // Connection events
+        this.livekitClient.on('connected', (data) => {
+            console.log('LiveKit connected:', data);
+            this.updateStatus('connected', 'Connected');
+        });
+        
+        this.livekitClient.on('disconnected', () => {
+            console.log('LiveKit disconnected');
+            this.updateStatus('ready', 'Ready');
+        });
+        
+        this.livekitClient.on('reconnecting', () => {
+            this.updateStatus('connecting', 'Reconnecting');
+        });
+        
+        this.livekitClient.on('reconnected', () => {
+            this.updateStatus('connected', 'Connected');
+        });
+        
+        // Audio level changes for real audio
+        this.livekitClient.on('audioLevelChanged', (data) => {
+            // Use real audio levels instead of simulated
+            this.updateAudioLevel(data.level);
+        });
+        
+        // Data messages for transcripts
+        this.livekitClient.on('dataReceived', (data) => {
+            console.log('Data received:', data);
+            
+            if (data.topic === 'transcript') {
+                console.log('User:', data.data.text);
+                // Could display this in UI
+            } else if (data.topic === 'agent_message') {
+                console.log('Assistant:', data.data.text);
+                // Could display this in UI
+            }
+        });
+        
+        // Error handling
+        this.livekitClient.on('error', (data) => {
+            console.error('LiveKit error:', data);
+            this.showError(data.message);
+        });
     }
     
     setupEventListeners() {
@@ -127,36 +181,83 @@ class CassetteUI {
         
         // Voice status updates
         window.api.on('voice:status', (status) => {
-            this.updateVoiceStatus(status);
+            console.log('Voice status update:', status);
+            this.handleVoiceStatus(status);
         });
         
         // Voice transcripts
         window.api.on('voice:transcript', (data) => {
             console.log('Voice transcript:', data.text);
-            // Could add visual feedback here
+            // Update status to show we're listening
+            if (this.state.isVoiceActive) {
+                this.updateStatus('connected', 'Listening');
+            }
         });
         
         // Agent responses
         window.api.on('voice:response', (data) => {
             console.log('Agent response:', data.text);
-            // Could add visual feedback here
+            // Update status to show agent is speaking
+            if (this.state.isVoiceActive) {
+                this.updateStatus('connected', 'Speaking');
+                // Return to listening after a delay
+                setTimeout(() => {
+                    if (this.state.isVoiceActive) {
+                        this.updateStatus('connected', 'Listening');
+                    }
+                }, 2000);
+            }
         });
         
         // Agent messages
         window.api.on('agent:message', (data) => {
             console.log('Agent message:', data.text);
+            // Could show toast notification
         });
         
         // Errors
         window.api.on('voice:error', (error) => {
             this.showError(error.message);
             console.error('Voice error:', error);
+            // Stop voice on critical errors
+            if (error.critical) {
+                this.stopVoice();
+            }
         });
         
         // Settings updates
         window.api.on('settings:updated', (settings) => {
             console.log('Settings updated:', settings);
         });
+    }
+    
+    handleVoiceStatus(status) {
+        switch (status) {
+            case 'connecting':
+                this.updateStatus('connecting', 'Connecting');
+                break;
+            case 'connected':
+                this.updateStatus('connected', 'Connected');
+                break;
+            case 'listening':
+                this.updateStatus('connected', 'Listening');
+                break;
+            case 'processing':
+                this.updateStatus('connected', 'Processing');
+                break;
+            case 'speaking':
+                this.updateStatus('connected', 'Speaking');
+                break;
+            case 'disconnected':
+                this.updateStatus('ready', 'Ready');
+                if (this.state.isVoiceActive) {
+                    this.stopVoice();
+                }
+                break;
+            case 'error':
+                this.updateStatus('error', 'Error');
+                break;
+        }
     }
     
     async loadInitialState() {
@@ -190,7 +291,7 @@ class CassetteUI {
         }
     }
     
-    startVoice() {
+    async startVoice() {
         // Don't start if already active
         if (this.state.isVoiceActive) return;
         
@@ -202,7 +303,7 @@ class CassetteUI {
         
         // Set state and start animation with smooth transition
         this.state.isVoiceActive = true;
-        this.updateStatus('connected', 'Listening');
+        this.updateStatus('connecting', 'Connecting');
         
         // Slightly longer delay for smoother transition
         setTimeout(() => {
@@ -212,15 +313,50 @@ class CassetteUI {
             }, 100);
         }, 100);
         
-        // Call backend if available (but don't wait for it)
+        // Call backend and handle real connection
         if (window.api) {
-            window.api.startVoice().catch(err => 
-                console.log('Backend call failed:', err)
-            );
+            try {
+                const result = await window.api.startVoice();
+                
+                if (result.success) {
+                    console.log('Voice started successfully:', result);
+                    
+                    // Update status
+                    this.updateStatus('connected', 'Listening');
+                    
+                    // If LiveKit client is available, connect with real credentials
+                    if (window.LiveKitClient && result.url && result.token) {
+                        // Initialize LiveKit client if not already done
+                        if (!this.livekitClient) {
+                            this.livekitClient = new window.LiveKitClient();
+                            this.setupLiveKitListeners();
+                        }
+                        
+                        // Connect to LiveKit room
+                        try {
+                            await this.livekitClient.connect(
+                                result.url,
+                                result.token,
+                                result.roomName
+                            );
+                            console.log('Connected to LiveKit room:', result.roomName);
+                        } catch (err) {
+                            console.error('Failed to connect to LiveKit:', err);
+                            this.showError('Failed to connect to voice service');
+                        }
+                    }
+                } else {
+                    throw new Error(result.error || 'Failed to start voice');
+                }
+            } catch (err) {
+                console.error('Failed to start voice:', err);
+                this.showError(err.message);
+                this.stopVoice();
+            }
         }
     }
     
-    stopVoice() {
+    async stopVoice() {
         // Don't stop if not active
         if (!this.state.isVoiceActive) return;
         
@@ -237,16 +373,31 @@ class CassetteUI {
             this.animationInterval = null;
         }
         
+        // Disconnect from LiveKit if connected
+        if (this.livekitClient && this.livekitClient.isConnected) {
+            try {
+                await this.livekitClient.disconnect();
+                console.log('Disconnected from LiveKit');
+            } catch (err) {
+                console.error('Error disconnecting from LiveKit:', err);
+            }
+        }
+        
         // Set state and stop animation
         this.state.isVoiceActive = false;
         this.setVoiceUI(false);
         this.updateStatus('ready', 'Ready');
         
-        // Call backend if available (but don't wait for it)
+        // Call backend to stop agent
         if (window.api) {
-            window.api.stopVoice().catch(err => 
-                console.log('Backend call failed:', err)
-            );
+            try {
+                const result = await window.api.stopVoice();
+                if (!result.success) {
+                    console.error('Failed to stop voice:', result.error);
+                }
+            } catch (err) {
+                console.error('Backend call failed:', err);
+            }
         }
     }
     
