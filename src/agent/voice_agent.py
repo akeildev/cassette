@@ -175,42 +175,8 @@ class VoiceOverlayAgent:
             self.error_logger.log_connection_error("mcp_system", "initialization", e)
             self.mcp_router = None
     
-    async def _say_wrapper(self, text: str):
-        """Wrapper for TTS output - ensures text is spoken clearly"""
-        if self.session:
-            try:
-                logger.info(f"TTS request → '{text}'")
-
-                # Add a small pause before speaking for clarity
-                await asyncio.sleep(0.2)
-
-                # Use the session's generate_reply for proper conversation flow
-                handle = await self.session.generate_reply(
-                    instructions=f"Speak this message clearly to the user: '{text}'"
-                )
-
-                # Wait for the speech to initialize (if supported)
-                if hasattr(handle, "wait_for_initialization"):
-                    await handle.wait_for_initialization()
-                    logger.info("TTS playback initialized")
-
-                # Add a small pause after speaking for clarity
-                await asyncio.sleep(0.3)
-
-                logger.info("TTS playback request completed")
-
-            except Exception as e:
-                logger.error(f"TTS error while speaking '{text}': {e}", exc_info=True)
-                # Fallback: Try alternative TTS method
-                try:
-                    if hasattr(self.session, 'say'):
-                        await self.session.say(text)
-                        logger.info(f"Fallback TTS succeeded for: '{text}'")
-                except Exception as fallback_error:
-                    logger.error(f"Fallback TTS also failed: {fallback_error}", exc_info=True)
-            
     async def _send_greeting(self):
-        """Send initial greeting to user"""
+        """Send initial greeting to user - simplified like Clueless"""
         greeting = self.metadata.get(
             "greeting",
             "Hello! I'm your voice assistant. I can see your screen, help with various tasks, and execute commands. Just let me know how I can help."
@@ -220,9 +186,11 @@ class VoiceOverlayAgent:
         if self.mcp_router and self.mcp_router.tools:
             tool_count = len(self.mcp_router.tools)
             greeting += f" I have {tool_count} tools available to help with various tasks."
-        
-        # Use the safer TTS wrapper so we capture any errors
-        await self._say_wrapper(greeting)
+
+        # Send greeting - let RealtimeModel handle turn detection like Clueless
+        handle = await self.session.generate_reply(
+            instructions=f"Say EXACTLY this and nothing else: '{greeting}'"
+        )
             
     def _get_system_instructions(self):
         """Get system instructions for the agent"""
@@ -403,23 +371,20 @@ class VoiceOverlayAgent:
     ) -> str:
         """
         Captures and analyzes a screenshot of the user's screen.
-        
+
         Args:
             query: What to analyze or look for in the screenshot
             region: Screen region to capture ("full", "window", or "selection")
-            
+
         Returns:
             Visual analysis of the screenshot
         """
         try:
-            # Provide immediate feedback
-            await self._say_wrapper("Let me take a look at your screen.")
-            
-            # Check cache (5 second validity)
+            # Check cache (5 second validity) - same as Clueless
             import time
             current_time = time.time()
-            if (self._screenshot_cache and 
-                self._screenshot_cache_time and 
+            if (self._screenshot_cache and
+                self._screenshot_cache_time and
                 current_time - self._screenshot_cache_time < 5):
                 logger.info("Using cached screenshot")
                 screenshot_base64 = self._screenshot_cache
@@ -430,16 +395,13 @@ class VoiceOverlayAgent:
                 # Cache it
                 self._screenshot_cache = screenshot_base64
                 self._screenshot_cache_time = current_time
-            
-            # Provide feedback that we're analyzing
-            await self._say_wrapper("Analyzing what I see...")
-            
-            # Analyze with GPT-4o vision
+
+            # Analyze with GPT-4o vision - simple and direct like Clueless
             logger.info(f"Analyzing screenshot with query: {query}")
             analysis = await self._analyze_with_vision(screenshot_base64, query)
-            
+
             return analysis
-            
+
         except Exception as e:
             logger.error(f"Screenshot tool error: {e}", exc_info=True)
             return f"I couldn't capture the screen right now. Error: {str(e)}"
@@ -481,7 +443,7 @@ class VoiceOverlayAgent:
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/jpeg;base64,{image_base64}",
-                                "detail": "auto"
+                                "detail": "auto"  # Let GPT-4o decide detail level
                             }
                         }
                     ]
@@ -489,9 +451,9 @@ class VoiceOverlayAgent:
                 max_tokens=500,
                 temperature=0.7
             )
-            
+
             return response.choices[0].message.content
-            
+
         except Exception as e:
             logger.error(f"GPT-4o vision analysis error: {e}")
             raise Exception(f"Could not analyze the screenshot: {str(e)}")

@@ -4,6 +4,8 @@ const path = require('path');
 const configService = require('./services/ConfigService');
 const settingsService = require('./services/SettingsService');
 const LiveKitService = require('./services/LiveKitService');
+const desktopCaptureService = require('./services/desktopCaptureService');
+const screenshotBridge = require('./services/screenshotWebSocketServer');
 
 let mainWindow;
 let services = {};
@@ -20,7 +22,7 @@ async function initializeServices() {
         // Initialize LiveKit service
         services.livekit = new LiveKitService(services.settings);
         const livekitReady = await services.livekit.initialize();
-        
+
         if (!livekitReady) {
             console.warn('[Main] LiveKit service not fully configured');
             dialog.showErrorBox(
@@ -28,6 +30,13 @@ async function initializeServices() {
                 'LiveKit API credentials are not configured. Please set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET in your .env file.'
             );
         }
+
+        // Initialize desktop capture service
+        services.desktopCapture = desktopCaptureService;
+        await services.desktopCapture.initialize();
+
+        // Initialize screenshot bridge
+        await screenshotBridge.start();
         
         console.log('[Main] Services initialized successfully');
         return true;
@@ -226,6 +235,69 @@ ipcMain.handle('system:info', async () => {
     };
 });
 
+// Desktop capture handlers
+ipcMain.handle('capture:screenshot', async (event, options = {}) => {
+    try {
+        console.log('[IPC] Screenshot capture requested:', options);
+
+        if (!services.desktopCapture) {
+            throw new Error('Desktop capture service not initialized');
+        }
+
+        const result = await services.desktopCapture.captureScreenshot(options);
+        return result;
+    } catch (error) {
+        console.error('[IPC] Screenshot capture failed:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+});
+
+ipcMain.handle('capture:getSources', async (event, options = {}) => {
+    try {
+        console.log('[IPC] Get sources requested:', options);
+
+        if (!services.desktopCapture) {
+            throw new Error('Desktop capture service not initialized');
+        }
+
+        const result = await services.desktopCapture.getAvailableSources(options);
+        return result;
+    } catch (error) {
+        console.error('[IPC] Get sources failed:', error);
+        return {
+            success: false,
+            error: error.message,
+            sources: []
+        };
+    }
+});
+
+ipcMain.handle('capture:getStatus', async () => {
+    try {
+        if (!services.desktopCapture) {
+            return {
+                success: false,
+                error: 'Desktop capture service not initialized'
+            };
+        }
+
+        const status = services.desktopCapture.getStatus();
+        return {
+            success: true,
+            status: status
+        };
+    } catch (error) {
+        console.error('[IPC] Get capture status failed:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+});
+
 app.whenReady().then(async () => {
     console.log('[Main] Cassette Voice Assistant starting...');
     
@@ -290,4 +362,7 @@ app.on('before-quit', async (event) => {
     if (services.settings) {
         services.settings.save();
     }
+
+    // Stop screenshot bridge
+    screenshotBridge.stop();
 });
