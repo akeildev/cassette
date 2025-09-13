@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import './env-loader.js';
+import { logger } from './logger.js';
 
 export class DatabaseHelper {
   constructor() {
@@ -21,7 +23,7 @@ export class DatabaseHelper {
       .single();
 
     if (error) {
-      console.error('Error fetching course:', error);
+      logger.error('Error fetching course:', error);
       return null;
     }
 
@@ -35,7 +37,7 @@ export class DatabaseHelper {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error listing courses:', error);
+      logger.error('Error listing courses:', error);
       return [];
     }
 
@@ -56,7 +58,7 @@ export class DatabaseHelper {
       .single();
 
     if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-      console.error('Error fetching progress:', error);
+      logger.error('Error fetching progress:', error);
       return null;
     }
 
@@ -85,7 +87,7 @@ export class DatabaseHelper {
       .single();
 
     if (error) {
-      console.error('Error creating progress:', error);
+      logger.error('Error creating progress:', error);
       return null;
     }
 
@@ -104,7 +106,7 @@ export class DatabaseHelper {
       .single();
 
     if (error) {
-      console.error('Error updating progress:', error);
+      logger.error('Error updating progress:', error);
       return null;
     }
 
@@ -128,7 +130,7 @@ export class DatabaseHelper {
       .single();
 
     if (error) {
-      console.error('Error fetching current step:', error);
+      logger.error('Error fetching current step:', error);
       return null;
     }
 
