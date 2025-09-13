@@ -220,22 +220,59 @@ class VoiceOverlayAgent:
         3. NAVIGATE: Use execute_mcp_tool with tool_name="nextStep" to move forward
         4. PROGRESS: Use execute_mcp_tool with tool_name="getProgress" to check progress
 
-        CRITICAL COURSE PRESENTATION RULES:
-        - When you receive course content, READ IT EXACTLY AS PROVIDED - word for word
-        - Do NOT summarize, paraphrase, or modify the course content
-        - After reading each step, ask: "Would you like me to continue to the next step?"
-        - Wait for user confirmation before moving to the next step
-        - If they say yes/continue/next, use the nextStep tool
-        - If they have questions, answer them before continuing
-        - Maintain a teaching tone - you're guiding them through the material
+        CRITICAL COURSE PRESENTATION ORDER - FOLLOW EXACTLY:
+        ================================================
+        Course content comes with lesson text and may include embedded actions marked with [STEP_ACTION].
 
-        Example flow:
-        User: "I want to learn about AI"
-        You: [List courses, then start the intro-to-ai course]
-        You: [Read the EXACT content from the first step]
-        You: "Would you like me to continue to the next step?"
-        User: "Yes"
-        You: [Use nextStep tool, then read the EXACT content]
+        PARSING COURSE CONTENT:
+        1. When you receive content from startCourse or nextStep, it will contain:
+           - The lesson text to read (everything before [STEP_ACTION])
+           - Optional: [STEP_ACTION]...[/STEP_ACTION] block with action details
+
+        2. If you see [STEP_ACTION] in the content:
+           - STOP reading at that point
+           - Parse the JSON inside the block for action details
+           - This contains: tool, description, and parameters
+
+        EXECUTION ORDER - MUST FOLLOW:
+        1. READ LESSON TEXT:
+           - Read everything BEFORE [STEP_ACTION] naturally
+           - Stop when you hit [STEP_ACTION] - don't read it out loud!
+
+        2. EXECUTE EMBEDDED ACTION (if [STEP_ACTION] exists):
+           - Extract and parse the JSON from [STEP_ACTION]...[/STEP_ACTION]
+           - Say the "description" field naturally
+           - Wait for user confirmation (yes/okay/sure/go ahead)
+           - Execute using execute_mcp_tool with the tool and parameters
+           - Confirm success naturally
+
+        3. COMPLETE THE STEP:
+           - ONLY after lesson AND action are done
+           - Ask: "Would you like to continue to the next step?"
+           - Wait for confirmation before using nextStep
+
+        EXAMPLE:
+        Content: "## Welcome to AI
+
+        Artificial Intelligence is the simulation...
+
+        [STEP_ACTION]
+        {"tool": "applescript_execute", "description": "Now, let me show you...", "parameters": {...}}
+        [/STEP_ACTION]"
+
+        CORRECT execution:
+        You: "Welcome to AI. Artificial Intelligence is the simulation..." [read text before STEP_ACTION]
+        You: "Now, let me show you some real-world AI applications by opening Apple's website."
+        User: "Okay"
+        You: [Execute the tool from STEP_ACTION block]
+        You: "There you go! Take a look at how Apple is using AI."
+        You: "Would you like to continue to the next step?"
+
+        CRITICAL RULES:
+        - NEVER read [STEP_ACTION] blocks aloud - they're instructions for you
+        - ALWAYS execute the action if present - it's part of the lesson
+        - A step is NOT complete until BOTH content AND action are done
+        - Make everything sound natural and conversational
 
         You can see the user's screen when they ask about it. Use the take_screenshot tool when:
         - They ask "what's on my screen" or "can you see this"
@@ -382,7 +419,32 @@ class VoiceOverlayAgent:
                 else:
                     return f"Successfully executed the AppleScript command. Result: {result}"
             elif tool_name in ["listCourses", "startCourse", "nextStep", "getProgress"]:
-                # For course tools, return the raw content for the agent to read exactly
+                # For course tools, parse and log the content structure
+                result_str = str(result)
+                logger.info(f"[Course Tool] Raw result from {tool_name}: {result_str[:500] if len(result_str) > 500 else result_str}...")
+
+                # For step content, check if it has an embedded action
+                if tool_name in ["startCourse", "nextStep"] and "[STEP_ACTION]" in result_str:
+                    try:
+                        import json
+                        import re
+
+                        # Extract the action JSON from the embedded block
+                        action_match = re.search(r'\[STEP_ACTION\](.*?)\[/STEP_ACTION\]', result_str, re.DOTALL)
+                        if action_match:
+                            action_json = action_match.group(1).strip()
+                            action_data = json.loads(action_json)
+
+                            logger.info(f"[Course Tool] Found embedded action:")
+                            logger.info(f"  - Tool: {action_data.get('tool', 'N/A')}")
+                            logger.info(f"  - Description: {action_data.get('description', 'N/A')}")
+                            logger.info(f"  - Has parameters: {bool(action_data.get('parameters'))}")
+
+                            # The agent will process this embedded structure
+                    except (json.JSONDecodeError, AttributeError) as e:
+                        logger.info(f"[Course Tool] Could not parse embedded action: {e}")
+
+                # Return the raw content for the agent to process
                 return result
             else:
                 return f"Tool {tool_name} completed successfully. Result: {result}"
